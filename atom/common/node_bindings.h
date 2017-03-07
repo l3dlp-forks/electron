@@ -5,8 +5,9 @@
 #ifndef ATOM_COMMON_NODE_BINDINGS_H_
 #define ATOM_COMMON_NODE_BINDINGS_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "v8/include/v8.h"
 #include "vendor/node/deps/uv/include/uv.h"
 
@@ -64,7 +65,7 @@ class NodeBindings {
   bool is_browser_;
 
   // Main thread's MessageLoop.
-  base::MessageLoop* message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Main thread's libuv loop.
   uv_loop_t* uv_loop_;

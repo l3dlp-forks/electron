@@ -5,13 +5,15 @@
 #include "atom/browser/ui/message_box.h"
 
 #include "atom/browser/browser.h"
-#include "atom/browser/native_window.h"
+#include "atom/browser/native_window_observer.h"
+#include "atom/browser/native_window_views.h"
+#include "atom/browser/unresponsive_suppressor.h"
 #include "base/callback.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/ui/libgtk2ui/gtk2_signal.h"
-#include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
-#include "chrome/browser/ui/libgtk2ui/skia_utils_gtk2.h"
+#include "chrome/browser/ui/libgtkui/gtk_signal.h"
+#include "chrome/browser/ui/libgtkui/gtk_util.h"
+#include "chrome/browser/ui/libgtkui/skia_utils_gtk.h"
 #include "ui/views/widget/desktop_aura/x11_desktop_handler.h"
 
 #define ANSI_FOREGROUND_RED   "\x1b[31m"
@@ -24,7 +26,7 @@ namespace atom {
 
 namespace {
 
-class GtkMessageBox {
+class GtkMessageBox : public NativeWindowObserver {
  public:
   GtkMessageBox(NativeWindow* parent_window,
                 MessageBoxType type,
@@ -34,9 +36,12 @@ class GtkMessageBox {
                 const std::string& title,
                 const std::string& message,
                 const std::string& detail,
+                const std::string& checkbox_label,
+                bool checkbox_checked,
                 const gfx::ImageSkia& icon)
-      : dialog_scope_(parent_window),
-        cancel_id_(cancel_id) {
+      : cancel_id_(cancel_id),
+        checkbox_checked_(false),
+        parent_(static_cast<NativeWindowViews*>(parent_window)) {
     // Create dialog.
     dialog_ = gtk_message_dialog_new(
         nullptr,  // parent
@@ -52,11 +57,30 @@ class GtkMessageBox {
 
     // Set dialog's icon.
     if (!icon.isNull()) {
-      GdkPixbuf* pixbuf = libgtk2ui::GdkPixbufFromSkBitmap(*icon.bitmap());
-      GtkWidget* image = gtk_image_new_from_pixbuf(pixbuf);
+      GdkPixbuf* pixbuf = libgtkui::GdkPixbufFromSkBitmap(*icon.bitmap());
+      GtkIconSource* iconsource = gtk_icon_source_new();
+      GtkIconSet* iconset = gtk_icon_set_new();
+      gtk_icon_source_set_pixbuf(iconsource, pixbuf);
+      gtk_icon_set_add_source(iconset, iconsource);
+      GtkWidget* image = gtk_image_new_from_icon_set(iconset,
+                                                     GTK_ICON_SIZE_DIALOG);
       gtk_message_dialog_set_image(GTK_MESSAGE_DIALOG(dialog_), image);
       gtk_widget_show(image);
+      gtk_icon_source_free(iconsource);
+      gtk_icon_set_unref(iconset);
       g_object_unref(pixbuf);
+    }
+
+    if (!checkbox_label.empty()) {
+      GtkWidget* message_area =
+          gtk_message_dialog_get_message_area(GTK_MESSAGE_DIALOG(dialog_));
+      GtkWidget* check_button =
+          gtk_check_button_new_with_label(checkbox_label.c_str());
+      g_signal_connect(check_button, "toggled",
+                       G_CALLBACK(OnCheckboxToggledThunk), this);
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check_button),
+                                   checkbox_checked);
+      gtk_container_add(GTK_CONTAINER(message_area), check_button);
     }
 
     // Add buttons.
@@ -68,14 +92,20 @@ class GtkMessageBox {
     }
 
     // Parent window.
-    if (parent_window) {
-      gfx::NativeWindow window = parent_window->GetNativeWindow();
-      libgtk2ui::SetGtkTransientForAura(dialog_, window);
+    if (parent_) {
+      parent_->AddObserver(this);
+      parent_->SetEnabled(false);
+      libgtkui::SetGtkTransientForAura(dialog_, parent_->GetNativeWindow());
+      gtk_window_set_modal(GTK_WINDOW(dialog_), TRUE);
     }
   }
 
   ~GtkMessageBox() {
     gtk_widget_destroy(dialog_);
+    if (parent_) {
+      parent_->RemoveObserver(this);
+      parent_->SetEnabled(true);
+    }
   }
 
   GtkMessageType GetMessageType(MessageBoxType type) {
@@ -111,12 +141,11 @@ class GtkMessageBox {
     gtk_widget_show_all(dialog_);
     // We need to call gtk_window_present after making the widgets visible to
     // make sure window gets correctly raised and gets focus.
-    int time = views::X11DesktopHandler::get()->wm_user_time_ms();
+    int time = ui::X11EventSource::GetInstance()->GetTimestamp();
     gtk_window_present_with_time(GTK_WINDOW(dialog_), time);
   }
 
   int RunSynchronous() {
-    gtk_window_set_modal(GTK_WINDOW(dialog_), TRUE);
     Show();
     int response = gtk_dialog_run(GTK_DIALOG(dialog_));
     if (response < 0)
@@ -134,14 +163,23 @@ class GtkMessageBox {
     Show();
   }
 
+  void OnWindowClosed() override {
+    parent_->RemoveObserver(this);
+    parent_ = nullptr;
+  }
+
   CHROMEGTK_CALLBACK_1(GtkMessageBox, void, OnResponseDialog, int);
+  CHROMEGTK_CALLBACK_0(GtkMessageBox, void, OnCheckboxToggled);
 
  private:
-  atom::NativeWindow::DialogScope dialog_scope_;
+  atom::UnresponsiveSuppressor unresponsive_suppressor_;
 
   // The id to return when the dialog is closed without pressing buttons.
   int cancel_id_;
 
+  bool checkbox_checked_;
+
+  NativeWindowViews* parent_;
   GtkWidget* dialog_;
   MessageBoxCallback callback_;
 
@@ -149,13 +187,17 @@ class GtkMessageBox {
 };
 
 void GtkMessageBox::OnResponseDialog(GtkWidget* widget, int response) {
-  gtk_widget_hide_all(dialog_);
+  gtk_widget_hide(dialog_);
 
   if (response < 0)
-    callback_.Run(cancel_id_);
+    callback_.Run(cancel_id_, checkbox_checked_);
   else
-    callback_.Run(response);
+    callback_.Run(response, checkbox_checked_);
   delete this;
+}
+
+void GtkMessageBox::OnCheckboxToggled(GtkWidget* widget) {
+  checkbox_checked_ = GTK_TOGGLE_BUTTON(widget)->active;
 }
 
 }  // namespace
@@ -170,8 +212,9 @@ int ShowMessageBox(NativeWindow* parent,
                    const std::string& message,
                    const std::string& detail,
                    const gfx::ImageSkia& icon) {
-  return GtkMessageBox(parent, type, buttons, default_id, cancel_id,
-                       title, message, detail, icon).RunSynchronous();
+  return GtkMessageBox(parent, type, buttons, default_id, cancel_id, title,
+                       message, detail, "", false, icon)
+      .RunSynchronous();
 }
 
 void ShowMessageBox(NativeWindow* parent,
@@ -183,18 +226,22 @@ void ShowMessageBox(NativeWindow* parent,
                     const std::string& title,
                     const std::string& message,
                     const std::string& detail,
+                    const std::string& checkbox_label,
+                    bool checkbox_checked,
                     const gfx::ImageSkia& icon,
                     const MessageBoxCallback& callback) {
-  (new GtkMessageBox(parent, type, buttons, default_id, cancel_id,
-                     title, message, detail, icon))->RunAsynchronous(callback);
+  (new GtkMessageBox(parent, type, buttons, default_id, cancel_id, title,
+                     message, detail, checkbox_label, checkbox_checked, icon))
+      ->RunAsynchronous(callback);
 }
 
 void ShowErrorBox(const base::string16& title, const base::string16& content) {
   if (Browser::Get()->is_ready()) {
-    GtkMessageBox(nullptr, MESSAGE_BOX_TYPE_ERROR, { "OK" }, -1, 0, "Error",
+    GtkMessageBox(nullptr, MESSAGE_BOX_TYPE_ERROR, {"OK"}, -1, 0, "Error",
                   base::UTF16ToUTF8(title).c_str(),
-                  base::UTF16ToUTF8(content).c_str(),
-                  gfx::ImageSkia()).RunSynchronous();
+                  base::UTF16ToUTF8(content).c_str(), "", false,
+                  gfx::ImageSkia())
+        .RunSynchronous();
   } else {
     fprintf(stderr,
             ANSI_TEXT_BOLD ANSI_BACKGROUND_GRAY

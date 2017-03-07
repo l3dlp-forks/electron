@@ -11,6 +11,7 @@
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "printing/page_size_margins.h"
@@ -43,14 +44,17 @@ void StopWorker(int document_cookie) {
 char* CopyPDFDataOnIOThread(
     const PrintHostMsg_DidPreviewDocument_Params& params) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  scoped_ptr<base::SharedMemory> shared_buf(
+  std::unique_ptr<base::SharedMemory> shared_buf(
       new base::SharedMemory(params.metafile_data_handle, true));
   if (!shared_buf->Map(params.data_size))
     return nullptr;
-  char* memory_pdf_data = static_cast<char*>(shared_buf->memory());
   char* pdf_data = new char[params.data_size];
-  memcpy(pdf_data, memory_pdf_data, params.data_size);
+  memcpy(pdf_data, shared_buf->memory(), params.data_size);
   return pdf_data;
+}
+
+void FreeNodeBufferData(char* data, void* hint) {
+  delete[] data;
 }
 
 }  // namespace
@@ -94,7 +98,8 @@ void PrintPreviewMessageHandler::OnPrintPreviewFailed(int document_cookie,
 }
 
 bool PrintPreviewMessageHandler::OnMessageReceived(
-    const IPC::Message& message) {
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintPreviewMessageHandler, message)
     IPC_MESSAGE_HANDLER(PrintHostMsg_MetafileReadyForPrinting,
@@ -113,12 +118,12 @@ void PrintPreviewMessageHandler::PrintToPDF(
   options.GetInteger(printing::kPreviewRequestID, &request_id);
   print_to_pdf_callback_map_[request_id] = callback;
 
-  content::RenderViewHost* rvh = web_contents()->GetRenderViewHost();
-  rvh->Send(new PrintMsg_PrintPreview(rvh->GetRoutingID(), options));
+  content::RenderFrameHost* rfh = web_contents()->GetMainFrame();
+  rfh->Send(new PrintMsg_PrintPreview(rfh->GetRoutingID(), options));
 }
 
 void PrintPreviewMessageHandler::RunPrintToPDFCallback(
-     int request_id, uint32 data_size, char* data) {
+    int request_id, uint32_t data_size, char* data) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -126,11 +131,12 @@ void PrintPreviewMessageHandler::RunPrintToPDFCallback(
   v8::HandleScope handle_scope(isolate);
   if (data) {
     v8::Local<v8::Value> buffer = node::Buffer::New(isolate,
-        data, static_cast<size_t>(data_size)).ToLocalChecked();
+        data, static_cast<size_t>(data_size), &FreeNodeBufferData, nullptr)
+        .ToLocalChecked();
     print_to_pdf_callback_map_[request_id].Run(v8::Null(isolate), buffer);
   } else {
     v8::Local<v8::String> error_message = v8::String::NewFromUtf8(isolate,
-        "Fail to generate PDF");
+        "Failed to generate PDF");
     print_to_pdf_callback_map_[request_id].Run(
         v8::Exception::Error(error_message), v8::Null(isolate));
   }

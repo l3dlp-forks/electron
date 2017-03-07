@@ -2,89 +2,123 @@
 // Use of this source code is governed by the MIT license that can be
 // found in the LICENSE file.
 
-#include <map>
 #include <string>
+#include <utility>
 
-#include "atom/common/api/object_life_monitor.h"
+#include "atom/common/api/atom_api_key_weak_map.h"
+#include "atom/common/api/remote_callback_freer.h"
+#include "atom/common/api/remote_object_freer.h"
+#include "atom/common/native_mate_converters/content_converter.h"
+#include "atom/common/native_mate_converters/gurl_converter.h"
 #include "atom/common/node_includes.h"
-#include "base/stl_util.h"
+#include "base/hash.h"
 #include "native_mate/dictionary.h"
+#include "url/origin.h"
 #include "v8/include/v8-profiler.h"
 
-namespace {
+namespace std {
 
-// A Persistent that can be copied and will not free itself.
-template<class T>
-struct LeakedPersistentTraits {
-  typedef v8::Persistent<T, LeakedPersistentTraits<T> > LeakedPersistent;
-  static const bool kResetInDestructor = false;
-  template<class S, class M>
-  static V8_INLINE void Copy(const v8::Persistent<S, M>& source,
-                             LeakedPersistent* dest) {
-    // do nothing, just allow copy
+// The hash function used by DoubleIDWeakMap.
+template <typename Type1, typename Type2>
+struct hash<std::pair<Type1, Type2>> {
+  std::size_t operator()(std::pair<Type1, Type2> value) const {
+    return base::HashInts<Type1, Type2>(value.first, value.second);
   }
 };
 
-// The handles are leaked on purpose.
-using FunctionTemplateHandle =
-    LeakedPersistentTraits<v8::FunctionTemplate>::LeakedPersistent;
-std::map<std::string, FunctionTemplateHandle> function_templates_;
+}  // namespace std
 
-v8::Local<v8::Object> CreateObjectWithName(v8::Isolate* isolate,
-                                           const std::string& name) {
-  if (name == "Object")
-    return v8::Object::New(isolate);
+namespace mate {
 
-  if (ContainsKey(function_templates_, name))
-    return v8::Local<v8::FunctionTemplate>::New(
-        isolate, function_templates_[name])->GetFunction()->NewInstance();
+template<typename Type1, typename Type2>
+struct Converter<std::pair<Type1, Type2>> {
+  static bool FromV8(v8::Isolate* isolate,
+                     v8::Local<v8::Value> val,
+                     std::pair<Type1, Type2>* out) {
+    if (!val->IsArray())
+      return false;
 
-  v8::Local<v8::FunctionTemplate> t = v8::FunctionTemplate::New(isolate);
-  t->SetClassName(mate::StringToV8(isolate, name));
-  function_templates_[name] = FunctionTemplateHandle(isolate, t);
-  return t->GetFunction()->NewInstance();
-}
+    v8::Local<v8::Array> array(v8::Local<v8::Array>::Cast(val));
+    if (array->Length() != 2)
+      return false;
+    return Converter<Type1>::FromV8(isolate, array->Get(0), &out->first) &&
+           Converter<Type2>::FromV8(isolate, array->Get(1), &out->second);
+  }
+};
 
-v8::Local<v8::Value> GetHiddenValue(v8::Local<v8::Object> object,
+}  // namespace mate
+
+namespace {
+
+v8::Local<v8::Value> GetHiddenValue(v8::Isolate* isolate,
+                                    v8::Local<v8::Object> object,
                                     v8::Local<v8::String> key) {
-  return object->GetHiddenValue(key);
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+  v8::Local<v8::Private> privateKey = v8::Private::ForApi(isolate, key);
+  v8::Local<v8::Value> value;
+  v8::Maybe<bool> result = object->HasPrivate(context, privateKey);
+  if (!(result.IsJust() && result.FromJust()))
+    return v8::Local<v8::Value>();
+  if (object->GetPrivate(context, privateKey).ToLocal(&value))
+    return value;
+  return v8::Local<v8::Value>();
 }
 
-void SetHiddenValue(v8::Local<v8::Object> object,
+void SetHiddenValue(v8::Isolate* isolate,
+                    v8::Local<v8::Object> object,
                     v8::Local<v8::String> key,
                     v8::Local<v8::Value> value) {
-  object->SetHiddenValue(key, value);
+  if (value.IsEmpty())
+    return;
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+  v8::Local<v8::Private> privateKey = v8::Private::ForApi(isolate, key);
+  object->SetPrivate(context, privateKey, value);
 }
 
-void DeleteHiddenValue(v8::Local<v8::Object> object,
+void DeleteHiddenValue(v8::Isolate* isolate,
+                       v8::Local<v8::Object> object,
                        v8::Local<v8::String> key) {
-  object->DeleteHiddenValue(key);
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+  v8::Local<v8::Private> privateKey = v8::Private::ForApi(isolate, key);
+  // Actually deleting the value would make force the object into
+  // dictionary mode which is unnecessarily slow. Instead, we replace
+  // the hidden value with "undefined".
+  object->SetPrivate(context, privateKey, v8::Undefined(isolate));
 }
 
 int32_t GetObjectHash(v8::Local<v8::Object> object) {
   return object->GetIdentityHash();
 }
 
-void SetDestructor(v8::Isolate* isolate,
-                   v8::Local<v8::Object> object,
-                   v8::Local<v8::Function> callback) {
-  atom::ObjectLifeMonitor::BindTo(isolate, object, callback);
-}
-
 void TakeHeapSnapshot(v8::Isolate* isolate) {
   isolate->GetHeapProfiler()->TakeHeapSnapshot();
+}
+
+void RequestGarbageCollectionForTesting(v8::Isolate* isolate) {
+  isolate->RequestGarbageCollectionForTesting(
+    v8::Isolate::GarbageCollectionType::kFullGarbageCollection);
+}
+
+bool IsSameOrigin(const GURL& l, const GURL& r) {
+  return url::Origin(l).IsSameOriginWith(url::Origin(r));
 }
 
 void Initialize(v8::Local<v8::Object> exports, v8::Local<v8::Value> unused,
                 v8::Local<v8::Context> context, void* priv) {
   mate::Dictionary dict(context->GetIsolate(), exports);
-  dict.SetMethod("createObjectWithName", &CreateObjectWithName);
   dict.SetMethod("getHiddenValue", &GetHiddenValue);
   dict.SetMethod("setHiddenValue", &SetHiddenValue);
   dict.SetMethod("deleteHiddenValue", &DeleteHiddenValue);
   dict.SetMethod("getObjectHash", &GetObjectHash);
-  dict.SetMethod("setDestructor", &SetDestructor);
   dict.SetMethod("takeHeapSnapshot", &TakeHeapSnapshot);
+  dict.SetMethod("setRemoteCallbackFreer", &atom::RemoteCallbackFreer::BindTo);
+  dict.SetMethod("setRemoteObjectFreer", &atom::RemoteObjectFreer::BindTo);
+  dict.SetMethod("createIDWeakMap", &atom::api::KeyWeakMap<int32_t>::Create);
+  dict.SetMethod("createDoubleIDWeakMap",
+                 &atom::api::KeyWeakMap<std::pair<int64_t, int32_t>>::Create);
+  dict.SetMethod("requestGarbageCollectionForTesting",
+                 &RequestGarbageCollectionForTesting);
+  dict.SetMethod("isSameOrigin", &IsSameOrigin);
 }
 
 }  // namespace

@@ -25,7 +25,7 @@
 客製的 DOM 元素:
 
 * [`File`物件](api/file-object.md)
-* [`<webview>`物件](api/web-view-tag.md)
+* [`<webview>`物件](api/webview-tag.md)
 * [`window.open`函數](api/window-open.md)
 
 主行程可用的模組:
@@ -66,7 +66,7 @@
 * [源碼目錄結構](development/source-code-directory-structure.md)
 * [與 NW.js (原名node-webkit) 在技術上的差異](development/atom-shell-vs-node-webkit.md)
 * [構建系統概況](development/build-system-overview.md)
-* [構建步驟 (OS X)](development/build-instructions-osx.md)
+* [構建步驟 (macOS)](development/build-instructions-osx.md)
 * [構建步驟 (Windows)](development/build-instructions-windows.md)
 * [構建步驟 (Linux)](development/build-instructions-linux.md)
 * [在 debugger 中使用 symbol server](development/setting-up-symbol-server.md)

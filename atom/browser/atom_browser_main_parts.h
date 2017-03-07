@@ -22,6 +22,7 @@ class Browser;
 class JavascriptEnvironment;
 class NodeBindings;
 class NodeDebugger;
+class NodeEnvironment;
 class BridgeTaskRunner;
 
 class AtomBrowserMainParts : public brightray::BrowserMainParts {
@@ -31,7 +32,7 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
 
   static AtomBrowserMainParts* Get();
 
-  // Sets the exit code, will fail if the the message loop is not ready.
+  // Sets the exit code, will fail if the message loop is not ready.
   bool SetExitCode(int code);
 
   // Gets the exit code
@@ -68,7 +69,7 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
 #endif
 
   // A fake BrowserProcess object that used to feed the source code from chrome.
-  scoped_ptr<BrowserProcess> fake_browser_process_;
+  std::unique_ptr<BrowserProcess> fake_browser_process_;
 
   // The gin::PerIsolateData requires a task runner to create, so we feed it
   // with a task runner that will post all work to main loop.
@@ -77,11 +78,12 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
   // Pointer to exit code.
   int* exit_code_;
 
-  scoped_ptr<Browser> browser_;
-  scoped_ptr<JavascriptEnvironment> js_env_;
-  scoped_ptr<NodeBindings> node_bindings_;
-  scoped_ptr<AtomBindings> atom_bindings_;
-  scoped_ptr<NodeDebugger> node_debugger_;
+  std::unique_ptr<Browser> browser_;
+  std::unique_ptr<JavascriptEnvironment> js_env_;
+  std::unique_ptr<NodeEnvironment> node_env_;
+  std::unique_ptr<NodeBindings> node_bindings_;
+  std::unique_ptr<AtomBindings> atom_bindings_;
+  std::unique_ptr<NodeDebugger> node_debugger_;
 
   base::Timer gc_timer_;
 

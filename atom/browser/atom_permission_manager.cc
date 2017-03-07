@@ -4,6 +4,9 @@
 
 #include "atom/browser/atom_permission_manager.h"
 
+#include <vector>
+
+#include "atom/browser/web_contents_preferences.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/permission_type.h"
 #include "content/public/browser/render_frame_host.h"
@@ -15,23 +18,60 @@ namespace atom {
 
 namespace {
 
-// Must be kept in sync with atom_browser_client.cc
-int kDefaultRoutingID = 2;
-
 bool WebContentsDestroyed(int process_id) {
-  auto rvh = content::RenderViewHost::FromID(process_id, kDefaultRoutingID);
-  if (rvh) {
-    auto contents = content::WebContents::FromRenderViewHost(rvh);
-    return contents->IsBeingDestroyed();
-  }
+  auto contents =
+      WebContentsPreferences::GetWebContentsFromProcessID(process_id);
+  if (!contents)
+    return true;
+  return contents->IsBeingDestroyed();
+}
 
-  return true;
+void PermissionRequestResponseCallbackWrapper(
+    const AtomPermissionManager::StatusCallback& callback,
+    const std::vector<blink::mojom::PermissionStatus>& vector) {
+  callback.Run(vector[0]);
 }
 
 }  // namespace
 
-AtomPermissionManager::AtomPermissionManager()
-    : request_id_(0) {
+class AtomPermissionManager::PendingRequest {
+ public:
+  PendingRequest(content::RenderFrameHost* render_frame_host,
+                 const std::vector<content::PermissionType>& permissions,
+                 const StatusesCallback& callback)
+      : render_process_id_(render_frame_host->GetProcess()->GetID()),
+        callback_(callback),
+        results_(permissions.size(), blink::mojom::PermissionStatus::DENIED),
+        remaining_results_(permissions.size()) {}
+
+  void SetPermissionStatus(int permission_id,
+                           blink::mojom::PermissionStatus status) {
+    DCHECK(!IsComplete());
+
+    results_[permission_id] = status;
+    --remaining_results_;
+  }
+
+  int render_process_id() const {
+    return render_process_id_;
+  }
+
+  bool IsComplete() const {
+    return remaining_results_ == 0;
+  }
+
+  void RunCallback() const {
+    callback_.Run(results_);
+  }
+
+ private:
+  int render_process_id_;
+  const StatusesCallback callback_;
+  std::vector<blink::mojom::PermissionStatus> results_;
+  size_t remaining_results_;
+};
+
+AtomPermissionManager::AtomPermissionManager() {
 }
 
 AtomPermissionManager::~AtomPermissionManager() {
@@ -39,12 +79,14 @@ AtomPermissionManager::~AtomPermissionManager() {
 
 void AtomPermissionManager::SetPermissionRequestHandler(
     const RequestHandler& handler) {
-  if (handler.is_null() && !pending_requests_.empty()) {
-    for (const auto& request : pending_requests_) {
-      if (!WebContentsDestroyed(request.second.render_process_id))
-        request.second.callback.Run(content::PERMISSION_STATUS_DENIED);
+  if (handler.is_null() && !pending_requests_.IsEmpty()) {
+    for (PendingRequestsMap::const_iterator iter(&pending_requests_);
+         !iter.IsAtEnd(); iter.Advance()) {
+      auto request = iter.GetCurrentValue();
+      if (!WebContentsDestroyed(request->render_process_id()))
+        request->RunCallback();
     }
-    pending_requests_.clear();
+    pending_requests_.Clear();
   }
   request_handler_ = handler;
 }
@@ -54,52 +96,82 @@ int AtomPermissionManager::RequestPermission(
     content::RenderFrameHost* render_frame_host,
     const GURL& requesting_origin,
     bool user_gesture,
-    const ResponseCallback& response_callback) {
-  int process_id = render_frame_host->GetProcess()->GetID();
+    const StatusCallback& response_callback) {
+  return RequestPermissions(
+      std::vector<content::PermissionType>(1, permission),
+      render_frame_host,
+      requesting_origin,
+      user_gesture,
+      base::Bind(&PermissionRequestResponseCallbackWrapper, response_callback));
+}
 
-  if (permission == content::PermissionType::MIDI_SYSEX) {
-    content::ChildProcessSecurityPolicy::GetInstance()->
-        GrantSendMidiSysExMessage(process_id);
+int AtomPermissionManager::RequestPermissions(
+    const std::vector<content::PermissionType>& permissions,
+    content::RenderFrameHost* render_frame_host,
+    const GURL& requesting_origin,
+    bool user_gesture,
+    const StatusesCallback& response_callback) {
+  if (permissions.empty()) {
+    response_callback.Run(std::vector<blink::mojom::PermissionStatus>());
+    return kNoPendingOperation;
   }
 
-  if (!request_handler_.is_null()) {
-    auto web_contents =
-        content::WebContents::FromRenderFrameHost(render_frame_host);
-    ++request_id_;
-    auto callback = base::Bind(&AtomPermissionManager::OnPermissionResponse,
-                               base::Unretained(this),
-                               request_id_,
-                               requesting_origin,
-                               response_callback);
-    pending_requests_[request_id_] = { process_id, callback };
+  if (request_handler_.is_null()) {
+    std::vector<blink::mojom::PermissionStatus> statuses;
+    for (auto permission : permissions) {
+      if (permission == content::PermissionType::MIDI_SYSEX) {
+        content::ChildProcessSecurityPolicy::GetInstance()->
+            GrantSendMidiSysExMessage(render_frame_host->GetProcess()->GetID());
+      }
+      statuses.push_back(blink::mojom::PermissionStatus::GRANTED);
+    }
+    response_callback.Run(statuses);
+    return kNoPendingOperation;
+  }
+
+  auto web_contents =
+      content::WebContents::FromRenderFrameHost(render_frame_host);
+  int request_id = pending_requests_.Add(new PendingRequest(
+      render_frame_host, permissions, response_callback));
+
+  for (size_t i = 0; i < permissions.size(); ++i) {
+    auto permission = permissions[i];
+    if (permission == content::PermissionType::MIDI_SYSEX) {
+      content::ChildProcessSecurityPolicy::GetInstance()->
+          GrantSendMidiSysExMessage(render_frame_host->GetProcess()->GetID());
+    }
+    const auto callback =
+        base::Bind(&AtomPermissionManager::OnPermissionResponse,
+                   base::Unretained(this), request_id, i);
     request_handler_.Run(web_contents, permission, callback);
-    return request_id_;
   }
 
-  response_callback.Run(content::PERMISSION_STATUS_GRANTED);
-  return kNoPendingOperation;
+  return request_id;
 }
 
 void AtomPermissionManager::OnPermissionResponse(
     int request_id,
-    const GURL& origin,
-    const ResponseCallback& callback,
-    content::PermissionStatus status) {
-  auto request = pending_requests_.find(request_id);
-  if (request != pending_requests_.end()) {
-    if (!WebContentsDestroyed(request->second.render_process_id))
-      callback.Run(status);
-    pending_requests_.erase(request);
+    int permission_id,
+    blink::mojom::PermissionStatus status) {
+  auto pending_request = pending_requests_.Lookup(request_id);
+  if (!pending_request)
+    return;
+
+  pending_request->SetPermissionStatus(permission_id, status);
+  if (pending_request->IsComplete()) {
+    pending_request->RunCallback();
+    pending_requests_.Remove(request_id);
   }
 }
 
 void AtomPermissionManager::CancelPermissionRequest(int request_id) {
-  auto request = pending_requests_.find(request_id);
-  if (request != pending_requests_.end()) {
-    if (!WebContentsDestroyed(request->second.render_process_id))
-      request->second.callback.Run(content::PERMISSION_STATUS_DENIED);
-    pending_requests_.erase(request);
-  }
+  auto pending_request = pending_requests_.Lookup(request_id);
+  if (!pending_request)
+    return;
+
+  if (!WebContentsDestroyed(pending_request->render_process_id()))
+    pending_request->RunCallback();
+  pending_requests_.Remove(request_id);
 }
 
 void AtomPermissionManager::ResetPermission(
@@ -108,11 +180,11 @@ void AtomPermissionManager::ResetPermission(
     const GURL& embedding_origin) {
 }
 
-content::PermissionStatus AtomPermissionManager::GetPermissionStatus(
+blink::mojom::PermissionStatus AtomPermissionManager::GetPermissionStatus(
     content::PermissionType permission,
     const GURL& requesting_origin,
     const GURL& embedding_origin) {
-  return content::PERMISSION_STATUS_GRANTED;
+  return blink::mojom::PermissionStatus::GRANTED;
 }
 
 void AtomPermissionManager::RegisterPermissionUsage(
@@ -125,7 +197,7 @@ int AtomPermissionManager::SubscribePermissionStatusChange(
     content::PermissionType permission,
     const GURL& requesting_origin,
     const GURL& embedding_origin,
-    const ResponseCallback& callback) {
+    const StatusCallback& callback) {
   return -1;
 }
 

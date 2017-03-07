@@ -6,17 +6,17 @@
 #define ATOM_COMMON_KEYBOARD_UTIL_H_
 
 #include <string>
+
 #include "ui/events/keycodes/keyboard_codes.h"
-#include "base/strings/string_util.h"
 
 namespace atom {
 
-// Return key code of the char, and also determine whether the SHIFT key is
+// Return key code of the |str|, and also determine whether the SHIFT key is
 // pressed.
-ui::KeyboardCode KeyboardCodeFromCharCode(base::char16 c, bool* shifted);
+ui::KeyboardCode KeyboardCodeFromStr(const std::string& str, bool* shifted);
 
-// Return key code of the char from a string representation of the char
-ui::KeyboardCode KeyboardCodeFromKeyIdentifier(const std::string& chr);
+// Ported from ui/events/blink/blink_event_util.h
+int WebEventModifiersToEventFlags(int modifiers);
 
 }  // namespace atom
 

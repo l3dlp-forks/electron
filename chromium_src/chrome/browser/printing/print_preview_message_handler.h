@@ -30,7 +30,8 @@ class PrintPreviewMessageHandler
   ~PrintPreviewMessageHandler() override;
 
   // content::WebContentsObserver implementation.
-  bool OnMessageReceived(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message,
+                         content::RenderFrameHost* render_frame_host) override;
 
   void PrintToPDF(const base::DictionaryValue& options,
                   const atom::api::WebContents::PrintToPDFCallback& callback);
@@ -47,7 +48,7 @@ class PrintPreviewMessageHandler
       const PrintHostMsg_DidPreviewDocument_Params& params);
   void OnPrintPreviewFailed(int document_cookie, int request_id);
 
-  void RunPrintToPDFCallback(int request_id, uint32 data_size, char* data);
+  void RunPrintToPDFCallback(int request_id, uint32_t data_size, char* data);
 
   PrintToPDFCallbackMap print_to_pdf_callback_map_;
 

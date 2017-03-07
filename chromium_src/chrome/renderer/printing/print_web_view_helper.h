@@ -5,18 +5,19 @@
 #ifndef CHROME_RENDERER_PRINTING_PRINT_WEB_VIEW_HELPER_H_
 #define CHROME_RENDERER_PRINTING_PRINT_WEB_VIEW_HELPER_H_
 
+#include <memory>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "content/public/renderer/render_view_observer.h"
-#include "content/public/renderer/render_view_observer_tracker.h"
+#include "content/public/renderer/render_frame_observer.h"
+#include "content/public/renderer/render_frame_observer_tracker.h"
 #include "printing/pdf_metafile_skia.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebPrintParams.h"
 #include "ui/gfx/geometry/size.h"
@@ -63,10 +64,10 @@ class FrameReference {
 // We plan on making print asynchronous and that will require copying the DOM
 // of the document and creating a new WebView with the contents.
 class PrintWebViewHelper
-    : public content::RenderViewObserver,
-      public content::RenderViewObserverTracker<PrintWebViewHelper> {
+    : public content::RenderFrameObserver,
+      public content::RenderFrameObserverTracker<PrintWebViewHelper> {
  public:
-  explicit PrintWebViewHelper(content::RenderView* render_view);
+  explicit PrintWebViewHelper(content::RenderFrame* render_frame);
   virtual ~PrintWebViewHelper();
 
   void PrintNode(const blink::WebNode& node);
@@ -83,18 +84,18 @@ class PrintWebViewHelper
     PREVIEW_ERROR_NONE,  // Always first.
     PREVIEW_ERROR_BAD_SETTING,
     PREVIEW_ERROR_METAFILE_COPY_FAILED,
-    PREVIEW_ERROR_METAFILE_INIT_FAILED,
+    PREVIEW_ERROR_METAFILE_INIT_FAILED_DEPRECATED,
     PREVIEW_ERROR_ZERO_PAGES,
-    PREVIEW_ERROR_MAC_DRAFT_METAFILE_INIT_FAILED,
+    PREVIEW_ERROR_MAC_DRAFT_METAFILE_INIT_FAILED_DEPRECATED,
     PREVIEW_ERROR_PAGE_RENDERED_WITHOUT_METAFILE,
     PREVIEW_ERROR_INVALID_PRINTER_SETTINGS,
     PREVIEW_ERROR_LAST_ENUM  // Always last.
   };
 
-  // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) override;
-  virtual void PrintPage(blink::WebLocalFrame* frame,
-                         bool user_initiated) override;
+  // RenderFrameObserver implementation.
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnDestruct() override;
+  void ScriptedPrint(bool user_initiated) override;
 
   // Message handlers ---------------------------------------------------------
 #if !defined(DISABLE_BASIC_PRINTING)
@@ -163,7 +164,7 @@ class PrintWebViewHelper
 
   // Get final print settings from the user.
   // Return false if the user cancels or on error.
-  bool GetPrintSettingsFromUser(blink::WebFrame* frame,
+  bool GetPrintSettingsFromUser(blink::WebLocalFrame* frame,
                                 const blink::WebNode& node,
                                 int expected_pages_count);
 
@@ -171,23 +172,23 @@ class PrintWebViewHelper
 
   void OnFramePreparedForPrintPages();
   void PrintPages();
-  bool PrintPagesNative(blink::WebFrame* frame, int page_count);
+  bool PrintPagesNative(blink::WebLocalFrame* frame, int page_count);
   void FinishFramePrinting();
 
   // Prints the page listed in |params|.
 #if defined(OS_LINUX) || defined(OS_ANDROID)
   void PrintPageInternal(const PrintMsg_PrintPage_Params& params,
-                         blink::WebFrame* frame,
+                         blink::WebLocalFrame* frame,
                          PdfMetafileSkia* metafile);
 #elif defined(OS_WIN)
   void PrintPageInternal(const PrintMsg_PrintPage_Params& params,
-                         blink::WebFrame* frame,
+                         blink::WebLocalFrame* frame,
                          PdfMetafileSkia* metafile,
                          gfx::Size* page_size_in_dpi,
                          gfx::Rect* content_area_in_dpi);
 #else
   void PrintPageInternal(const PrintMsg_PrintPage_Params& params,
-                         blink::WebFrame* frame);
+                         blink::WebLocalFrame* frame);
 #endif
 
   // Render the frame for printing.
@@ -198,7 +199,7 @@ class PrintWebViewHelper
 #if defined(OS_MACOSX)
   void RenderPage(const PrintMsg_Print_Params& params,
                   int page_number,
-                  blink::WebFrame* frame,
+                  blink::WebLocalFrame* frame,
                   bool is_preview,
                   PdfMetafileSkia* metafile,
                   gfx::Size* page_size,
@@ -218,19 +219,17 @@ class PrintWebViewHelper
 
   // Helper methods -----------------------------------------------------------
 
-  bool CopyMetafileDataToSharedMem(PdfMetafileSkia* metafile,
+  bool CopyMetafileDataToSharedMem(const PdfMetafileSkia& metafile,
                                    base::SharedMemoryHandle* shared_mem_handle);
 
   // Helper method to get page layout in points and fit to page if needed.
   static void ComputePageLayoutInPointsForCss(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       int page_index,
       const PrintMsg_Print_Params& default_params,
       bool ignore_css_margins,
       double* scale_factor,
       PageSizeMargins* page_layout_in_points);
-
-  bool GetPrintFrame(blink::WebLocalFrame** frame);
 
   // Script Initiated Printing ------------------------------------------------
 
@@ -244,10 +243,10 @@ class PrintWebViewHelper
   void SetPrintPagesParams(const PrintMsg_PrintPages_Params& settings);
 
   // WebView used only to print the selection.
-  scoped_ptr<PrepareFrameAndViewForPrint> prep_frame_view_;
+  std::unique_ptr<PrepareFrameAndViewForPrint> prep_frame_view_;
   bool reset_prep_frame_view_;
 
-  scoped_ptr<PrintMsg_PrintPages_Params> print_pages_params_;
+  std::unique_ptr<PrintMsg_PrintPages_Params> print_pages_params_;
   bool is_print_ready_metafile_sent_;
   bool ignore_css_margins_;
 
@@ -343,8 +342,8 @@ class PrintWebViewHelper
     FrameReference source_frame_;
     blink::WebNode source_node_;
 
-    scoped_ptr<PrepareFrameAndViewForPrint> prep_frame_view_;
-    scoped_ptr<PdfMetafileSkia> metafile_;
+    std::unique_ptr<PrepareFrameAndViewForPrint> prep_frame_view_;
+    std::unique_ptr<PdfMetafileSkia> metafile_;
 
     // Total page count in the renderer.
     int total_page_count_;
@@ -373,6 +372,7 @@ class PrintWebViewHelper
   bool print_node_in_progress_;
   bool is_loading_;
   bool is_scripted_preview_delayed_;
+  int ipc_nesting_level_;
 
   PrintPreviewContext print_preview_context_;
 

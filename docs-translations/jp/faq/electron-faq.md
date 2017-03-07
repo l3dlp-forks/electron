@@ -2,15 +2,38 @@
 
 ## Electronは、いつ最新のChromeにアップグレードされますか?
 
-ElectronのChromeバージョンは、通常、新しいChromeのstabeleバージョンがリリースされた後、1～2週間以内に上げられます。
+ElectronのChromeバージョンは、通常、新しいChromeのstabeleバージョンがリリースされた後、1～2週間以内に上げられます。ただし、この期間というのは保障されてはおらず、またバージョンアップでの作業量に左右されます。
 
 また、Chromeのstableチャンネルのみを使用し、もし、重要な修正がbetaまたはdevチャンネルにある場合、それをバックポートします。
+
+もっと知りたければ、[セキュリティについて](../tutorial/security.md)をご参照ください。
 
 ## Electronは、いつ最新のNode.jsにアップグレードされますか?
 
 Node.js の新しいバージョンがリリースされたとき、私たちは Electron の Node.js を更新するのを通常約1か月待ちます。そのようにして、とても頻繁に発生している、新しい Node.js バージョンによって取り込まれたバグによる影響を避けることができます。
 
 通常、Node.js の新しい機能は V8 のアップグレードによってもたらされますが、Electron は Chrome ブラウザーに搭載されている V8 を使用しているので、新しい Node.js に入ったばかりのピカピカに新しい JavaScript 機能は Electron ではたいてい既に導入されています。
+
+## ウェブページ間のデータを共有する方法は?
+
+ウェブページ（レンダラープロセス）間のデータを共有するために最も単純な方法は、ブラウザで、すでに提供されているHTML5 APIを使用することです。もっとも良い方法は、[Storage API][storage]、[`localStorage`][local-storage]、[`sessionStorage`][session-storage]、[IndexedDB][indexed-db]です。
+
+```javascript
+// In the main process.
+global.sharedObject = {
+  someProperty: 'default value'
+}
+```
+
+```javascript
+// In page 1.
+require('remote').getGlobal('sharedObject').someProperty = 'new value'
+```
+
+```javascript
+// In page 2.
+console.log(require('remote').getGlobal('sharedObject').someProperty)
+```
 
 ## 何分か経つと、アプリの Window/tray が消えてしまいます
 
@@ -26,17 +49,17 @@ Node.js の新しいバージョンがリリースされたとき、私たちは
 変更前：
 
 ```javascript
-app.on('ready', function() {
-  var tray = new Tray('/path/to/icon.png');
+app.on('ready', function () {
+  var tray = new Tray('/path/to/icon.png')
 })
 ```
 
 変更後：
 
 ```javascript
-var tray = null;
-app.on('ready', function() {
-  tray = new Tray('/path/to/icon.png');
+var tray = null
+app.on('ready', function () {
+  tray = new Tray('/path/to/icon.png')
 })
 ```
 
@@ -48,11 +71,11 @@ Electronに組み込まれているNode.jsの影響で, `module`, `exports`, `re
 
 ```javascript
 // In the main process.
-var mainWindow = new BrowserWindow({
+var win = new BrowserWindow({
   webPreferences: {
     nodeIntegration: false
   }
-});
+})
 ```
 
 しかし、Node.jsとElectron APIを使用した機能を維持したい場合は、ほかのライブラリを読み込む前に、ページのシンボルをリネームする必要があります。
@@ -83,7 +106,7 @@ Uncaught TypeError: Cannot read property 'setZoomLevel' of undefined
 正しい組み込みモジュールを使用しているかを確認するために、`electron`モジュールのパスを出力します。
 
 ```javascript
-console.log(require.resolve('electron'));
+console.log(require.resolve('electron'))
 ```
 
 そして、次の形式かどうかを確認します。
@@ -92,7 +115,7 @@ console.log(require.resolve('electron'));
 "/path/to/Electron.app/Contents/Resources/atom.asar/renderer/api/lib/exports/electron.js"
 ```
 
-If it is something like もし、`node_modules/electron/index.js`　のような形式の場合は、npm `electron` モジュールを削除するか、それをリネームします。
+もし、`node_modules/electron/index.js`　のような形式の場合は、npm `electron` モジュールを削除するか、それをリネームします。
 
 ```bash
 npm uninstall electron
@@ -104,3 +127,7 @@ npm uninstall -g electron
 [memory-management]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Memory_Management
 [variable-scope]: https://msdn.microsoft.com/library/bzt2dkta(v=vs.94).aspx
 [electron-module]: https://www.npmjs.com/package/electron
+[storage]: https://developer.mozilla.org/en-US/docs/Web/API/Storage
+[local-storage]: https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage
+[session-storage]: https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage
+[indexed-db]: https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API

@@ -1,6 +1,6 @@
 # 主进程调试
 
-浏览器窗口的开发工具仅能调试渲染器的进程脚本（比如web 页面）。为了提供一个可以调试主进程
+浏览器窗口的开发工具仅能调试渲染器的进程脚本（比如 web 页面）。为了提供一个可以调试主进程
 的方法，Electron 提供了 `--debug` 和 `--debug-brk` 开关。
 
 ## 命令行开关
@@ -16,33 +16,10 @@
 
 就像 `--debug` 一样，但是会在第一行暂停脚本运行。
 
-## 使用 node-inspector 来调试
+## 外部调试器
 
-__备注：__ Electron 使用 node v0.11.13 版本，目前对 node-inspector支持的不是特别好，
-如果你通过 node-inspector 的 console 来检查 `process` 对象，主进程就会崩溃。
+你将需要使用一个支持 V8 调试器的调试协议，
+下面的指南将会帮助你开始：
 
-### 1. 开始 [node-inspector][node-inspector] 服务
-
-```bash
-$ node-inspector
-```
-
-### 2. 打开 Electron 的调试模式
-
-你也可以用调试参数来运行 Electron ：
-
-```bash
-$ electron --debug=5858 your/app
-```
-
-或者，在第一行暂停你的脚本：
-
-```bash
-$ electron --debug-brk=5858 your/app
-```
-
-### 3. 加载调试器界面
-
-在 Chrome 中打开 http://127.0.0.1:8080/debug?ws=127.0.0.1:8080&port=5858
-
-[node-inspector]: https://github.com/node-inspector/node-inspector
+- [使用 VSCode 进行主进程调试](debugging-main-process-vscode.md)
+- [使用 node-inspector 进行主进程调试](debugging-main-process-node-inspector.md)

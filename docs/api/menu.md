@@ -1,225 +1,31 @@
-# Menu
-
-The `menu` class is used to create native menus that can be used as
-application menus and
-[context menus](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XUL/PopupGuide/ContextMenus).
-This module is a main process module which can be used in a render process via
-the `remote` module.
-
-Each menu consists of multiple [menu items](menu-item.md) and each menu item can
-have a submenu.
-
-Below is an example of creating a menu dynamically in a web page
-(render process) by using the [remote](remote.md) module, and showing it when
-the user right clicks the page:
-
-```html
-<!-- index.html -->
-<script>
-const remote = require('electron').remote;
-const Menu = remote.Menu;
-const MenuItem = remote.MenuItem;
-
-var menu = new Menu();
-menu.append(new MenuItem({ label: 'MenuItem1', click: function() { console.log('item 1 clicked'); } }));
-menu.append(new MenuItem({ type: 'separator' }));
-menu.append(new MenuItem({ label: 'MenuItem2', type: 'checkbox', checked: true }));
-
-window.addEventListener('contextmenu', function (e) {
-  e.preventDefault();
-  menu.popup(remote.getCurrentWindow());
-}, false);
-</script>
-```
-
-An example of creating the application menu in the render process with the
-simple template API:
-
-```javascript
-var template = [
-  {
-    label: 'Edit',
-    submenu: [
-      {
-        label: 'Undo',
-        accelerator: 'CmdOrCtrl+Z',
-        role: 'undo'
-      },
-      {
-        label: 'Redo',
-        accelerator: 'Shift+CmdOrCtrl+Z',
-        role: 'redo'
-      },
-      {
-        type: 'separator'
-      },
-      {
-        label: 'Cut',
-        accelerator: 'CmdOrCtrl+X',
-        role: 'cut'
-      },
-      {
-        label: 'Copy',
-        accelerator: 'CmdOrCtrl+C',
-        role: 'copy'
-      },
-      {
-        label: 'Paste',
-        accelerator: 'CmdOrCtrl+V',
-        role: 'paste'
-      },
-      {
-        label: 'Select All',
-        accelerator: 'CmdOrCtrl+A',
-        role: 'selectall'
-      },
-    ]
-  },
-  {
-    label: 'View',
-    submenu: [
-      {
-        label: 'Reload',
-        accelerator: 'CmdOrCtrl+R',
-        click: function(item, focusedWindow) {
-          if (focusedWindow)
-            focusedWindow.reload();
-        }
-      },
-      {
-        label: 'Toggle Full Screen',
-        accelerator: (function() {
-          if (process.platform == 'darwin')
-            return 'Ctrl+Command+F';
-          else
-            return 'F11';
-        })(),
-        click: function(item, focusedWindow) {
-          if (focusedWindow)
-            focusedWindow.setFullScreen(!focusedWindow.isFullScreen());
-        }
-      },
-      {
-        label: 'Toggle Developer Tools',
-        accelerator: (function() {
-          if (process.platform == 'darwin')
-            return 'Alt+Command+I';
-          else
-            return 'Ctrl+Shift+I';
-        })(),
-        click: function(item, focusedWindow) {
-          if (focusedWindow)
-            focusedWindow.toggleDevTools();
-        }
-      },
-    ]
-  },
-  {
-    label: 'Window',
-    role: 'window',
-    submenu: [
-      {
-        label: 'Minimize',
-        accelerator: 'CmdOrCtrl+M',
-        role: 'minimize'
-      },
-      {
-        label: 'Close',
-        accelerator: 'CmdOrCtrl+W',
-        role: 'close'
-      },
-    ]
-  },
-  {
-    label: 'Help',
-    role: 'help',
-    submenu: [
-      {
-        label: 'Learn More',
-        click: function() { require('electron').shell.openExternal('http://electron.atom.io') }
-      },
-    ]
-  },
-];
-
-if (process.platform == 'darwin') {
-  var name = require('electron').app.getName();
-  template.unshift({
-    label: name,
-    submenu: [
-      {
-        label: 'About ' + name,
-        role: 'about'
-      },
-      {
-        type: 'separator'
-      },
-      {
-        label: 'Services',
-        role: 'services',
-        submenu: []
-      },
-      {
-        type: 'separator'
-      },
-      {
-        label: 'Hide ' + name,
-        accelerator: 'Command+H',
-        role: 'hide'
-      },
-      {
-        label: 'Hide Others',
-        accelerator: 'Command+Alt+H',
-        role: 'hideothers'
-      },
-      {
-        label: 'Show All',
-        role: 'unhide'
-      },
-      {
-        type: 'separator'
-      },
-      {
-        label: 'Quit',
-        accelerator: 'Command+Q',
-        click: function() { app.quit(); }
-      },
-    ]
-  });
-  // Window menu.
-  template[3].submenu.push(
-    {
-      type: 'separator'
-    },
-    {
-      label: 'Bring All to Front',
-      role: 'front'
-    }
-  );
-}
-
-var menu = Menu.buildFromTemplate(template);
-Menu.setApplicationMenu(menu);
-```
-
 ## Class: Menu
+
+> Create native application menus and context menus.
+
+Process: [Main](../glossary.md#main-process)
 
 ### `new Menu()`
 
 Creates a new menu.
 
-## Methods
+### Static Methods
 
-The `menu` class has the following methods:
+The `menu` class has the following static methods:
 
-### `Menu.setApplicationMenu(menu)`
+#### `Menu.setApplicationMenu(menu)`
 
 * `menu` Menu
 
-Sets `menu` as the application menu on OS X. On Windows and Linux, the `menu`
+Sets `menu` as the application menu on macOS. On Windows and Linux, the `menu`
 will be set as each window's top menu.
 
-### `Menu.sendActionToFirstResponder(action)` _OS X_
+**Note:** This API has to be called after the `ready` event of `app` module.
+
+#### `Menu.getApplicationMenu()`
+
+Returns `Menu` - The application menu, if set, or `null`, if not set.
+
+#### `Menu.sendActionToFirstResponder(action)` _macOS_
 
 * `action` String
 
@@ -227,9 +33,14 @@ Sends the `action` to the first responder of application. This is used for
 emulating default Cocoa menu behaviors, usually you would just use the
 `role` property of `MenuItem`.
 
-### `Menu.buildFromTemplate(template)`
+See the [macOS Cocoa Event Handling Guide](https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/EventOverview/EventArchitecture/EventArchitecture.html#//apple_ref/doc/uid/10000060i-CH3-SW7)
+for more information on macOS' native actions.
 
-* `template` Array
+#### `Menu.buildFromTemplate(template)`
+
+* `template` MenuItemConstructorOptions[]
+
+Returns `Menu`
 
 Generally, the `template` is just an array of `options` for constructing a
 [MenuItem](menu-item.md). The usage can be referenced above.
@@ -237,44 +48,270 @@ Generally, the `template` is just an array of `options` for constructing a
 You can also attach other fields to the element of the `template` and they
 will become properties of the constructed menu items.
 
-### `Menu.popup([browserWindow, x, y, positioningItem])`
+### Instance Methods
 
-* `browserWindow` BrowserWindow (optional) - Default is `null`.
-* `x` Number (optional) - Default is -1.
-* `y` Number (**required** if `x` is used) - Default is -1.
-* `positioningItem` Number (optional) _OS X_ - The index of the menu item to
-  be positioned under the mouse cursor at the specified coordinates. Default is
-  -1.
+The `menu` object has the following instance methods:
 
-Pops up this menu as a context menu in the `browserWindow`. You can optionally
-provide a `x, y` coordinate to place the menu at, otherwise it will be placed
-at the current mouse cursor position.
+#### `menu.popup([browserWindow, options])`
 
-### `Menu.append(menuItem)`
+* `browserWindow` BrowserWindow (optional) - Default is the focused window.
+* `options` Object (optional)
+  * `x` Number (optional) - Default is the current mouse cursor position.
+  * `y` Number (**required** if `x` is used) - Default is the current mouse
+    cursor position.
+  * `async` Boolean (optional) - Set to `true` to have this method return
+    immediately called, `false` to return after the menu has been selected
+    or closed. Defaults to `false`.
+  * `positioningItem` Number (optional) _macOS_ - The index of the menu item to
+    be positioned under the mouse cursor at the specified coordinates. Default
+    is -1.
+
+Pops up this menu as a context menu in the `browserWindow`.
+
+#### `menu.closePopup([browserWindow])`
+
+* `browserWindow` BrowserWindow (optional) - Default is the focused window.
+
+Closes the context menu in the `browserWindow`.
+
+#### `menu.append(menuItem)`
 
 * `menuItem` MenuItem
 
 Appends the `menuItem` to the menu.
 
-### `Menu.insert(pos, menuItem)`
+#### `menu.insert(pos, menuItem)`
 
 * `pos` Integer
 * `menuItem` MenuItem
 
 Inserts the `menuItem` to the `pos` position of the menu.
 
-### `Menu.items()`
+### Instance Properties
 
-Get an array containing the menu's items.
+`menu` objects also have the following properties:
 
-## Notes on OS X Application Menu
+#### `menu.items`
 
-OS X has a completely different style of application menu from Windows and
-Linux, here are some notes on making your app's menu more native-like.
+A MenuItem[] array containing the menu's items.
+
+Each `Menu` consists of multiple [`MenuItem`](menu-item.md)s and each `MenuItem`
+can have a submenu.
+
+## Examples
+
+The `Menu` class is only available in the main process, but you can also use it
+in the render process via the [`remote`](remote.md) module.
+
+### Main process
+
+An example of creating the application menu in the main process with the
+simple template API:
+
+```javascript
+const {app, Menu} = require('electron')
+
+const template = [
+  {
+    label: 'Edit',
+    submenu: [
+      {
+        role: 'undo'
+      },
+      {
+        role: 'redo'
+      },
+      {
+        type: 'separator'
+      },
+      {
+        role: 'cut'
+      },
+      {
+        role: 'copy'
+      },
+      {
+        role: 'paste'
+      },
+      {
+        role: 'pasteandmatchstyle'
+      },
+      {
+        role: 'delete'
+      },
+      {
+        role: 'selectall'
+      }
+    ]
+  },
+  {
+    label: 'View',
+    submenu: [
+      {
+        role: 'reload'
+      },
+      {
+        role: 'forcereload'
+      },
+      {
+        role: 'toggledevtools'
+      },
+      {
+        type: 'separator'
+      },
+      {
+        role: 'resetzoom'
+      },
+      {
+        role: 'zoomin'
+      },
+      {
+        role: 'zoomout'
+      },
+      {
+        type: 'separator'
+      },
+      {
+        role: 'togglefullscreen'
+      }
+    ]
+  },
+  {
+    role: 'window',
+    submenu: [
+      {
+        role: 'minimize'
+      },
+      {
+        role: 'close'
+      }
+    ]
+  },
+  {
+    role: 'help',
+    submenu: [
+      {
+        label: 'Learn More',
+        click () { require('electron').shell.openExternal('https://electron.atom.io') }
+      }
+    ]
+  }
+]
+
+if (process.platform === 'darwin') {
+  template.unshift({
+    label: app.getName(),
+    submenu: [
+      {
+        role: 'about'
+      },
+      {
+        type: 'separator'
+      },
+      {
+        role: 'services',
+        submenu: []
+      },
+      {
+        type: 'separator'
+      },
+      {
+        role: 'hide'
+      },
+      {
+        role: 'hideothers'
+      },
+      {
+        role: 'unhide'
+      },
+      {
+        type: 'separator'
+      },
+      {
+        role: 'quit'
+      }
+    ]
+  })
+  // Edit menu.
+  template[1].submenu.push(
+    {
+      type: 'separator'
+    },
+    {
+      label: 'Speech',
+      submenu: [
+        {
+          role: 'startspeaking'
+        },
+        {
+          role: 'stopspeaking'
+        }
+      ]
+    }
+  )
+  // Window menu.
+  template[3].submenu = [
+    {
+      label: 'Close',
+      accelerator: 'CmdOrCtrl+W',
+      role: 'close'
+    },
+    {
+      label: 'Minimize',
+      accelerator: 'CmdOrCtrl+M',
+      role: 'minimize'
+    },
+    {
+      label: 'Zoom',
+      role: 'zoom'
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: 'Bring All to Front',
+      role: 'front'
+    }
+  ]
+}
+
+const menu = Menu.buildFromTemplate(template)
+Menu.setApplicationMenu(menu)
+```
+
+### Render process
+
+Below is an example of creating a menu dynamically in a web page
+(render process) by using the [`remote`](remote.md) module, and showing it when
+the user right clicks the page:
+
+```html
+<!-- index.html -->
+<script>
+const {remote} = require('electron')
+const {Menu, MenuItem} = remote
+
+const menu = new Menu()
+menu.append(new MenuItem({label: 'MenuItem1', click() { console.log('item 1 clicked') }}))
+menu.append(new MenuItem({type: 'separator'}))
+menu.append(new MenuItem({label: 'MenuItem2', type: 'checkbox', checked: true}))
+
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault()
+  menu.popup(remote.getCurrentWindow())
+}, false)
+</script>
+```
+
+
+## Notes on macOS Application Menu
+
+macOS has a completely different style of application menu from Windows and
+Linux. Here are some notes on making your app's menu more native-like.
 
 ### Standard Menus
 
-On OS X there are many system defined standard menus, like the `Services` and
+On macOS there are many system-defined standard menus, like the `Services` and
 `Windows` menus. To make your menu a standard menu, you should set your menu's
 `role` to one of following and Electron will recognize them and make them
 become standard menus:
@@ -285,21 +322,22 @@ become standard menus:
 
 ### Standard Menu Item Actions
 
-OS X has provided standard actions for some menu items, like `About xxx`,
+macOS has provided standard actions for some menu items, like `About xxx`,
 `Hide xxx`, and `Hide Others`. To set the action of a menu item to a standard
 action, you should set the `role` attribute of the menu item.
 
 ### Main Menu's Name
 
-On OS X the label of application menu's first item is always your app's name,
-no matter what label you set. To change it you have to change your app's name
-by modifying your app bundle's `Info.plist` file. See [About Information
-Property List Files][AboutInformationPropertyListFiles] for more information.
+On macOS the label of the application menu's first item is always your app's
+name, no matter what label you set. To change it, modify your app bundle's
+`Info.plist` file. See
+[About Information Property List Files][AboutInformationPropertyListFiles]
+for more information.
 
 ## Setting Menu for Specific Browser Window (*Linux* *Windows*)
 
 The [`setMenu` method][setMenu] of browser windows can set the menu of certain
-browser window.
+browser windows.
 
 ## Menu Item Position
 
@@ -376,5 +414,4 @@ Menu:
 ```
 
 [AboutInformationPropertyListFiles]: https://developer.apple.com/library/ios/documentation/general/Reference/InfoPlistKeyReference/Articles/AboutInformationPropertyListFiles.html
-[setMenu]:
-https://github.com/atom/electron/blob/master/docs/api/browser-window.md#winsetmenumenu-linux-windows
+[setMenu]: https://github.com/electron/electron/blob/master/docs/api/browser-window.md#winsetmenumenu-linux-windows

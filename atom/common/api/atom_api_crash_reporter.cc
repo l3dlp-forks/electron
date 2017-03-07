@@ -6,6 +6,7 @@
 #include <string>
 
 #include "atom/common/crash_reporter/crash_reporter.h"
+#include "atom/common/native_mate_converters/file_path_converter.h"
 #include "base/bind.h"
 #include "native_mate/dictionary.h"
 
@@ -14,24 +15,6 @@
 using crash_reporter::CrashReporter;
 
 namespace mate {
-
-template<>
-struct Converter<std::map<std::string, std::string> > {
-  static bool FromV8(v8::Isolate* isolate,
-                     v8::Local<v8::Value> val,
-                     std::map<std::string, std::string>* out) {
-    if (!val->IsObject())
-      return false;
-
-    v8::Local<v8::Object> dict = val->ToObject();
-    v8::Local<v8::Array> keys = dict->GetOwnPropertyNames();
-    for (uint32_t i = 0; i < keys->Length(); ++i) {
-      v8::Local<v8::Value> key = keys->Get(i);
-      (*out)[V8ToString(key)] = V8ToString(dict->Get(key));
-    }
-    return true;
-  }
-};
 
 template<>
 struct Converter<CrashReporter::UploadReportResult> {
@@ -48,15 +31,27 @@ struct Converter<CrashReporter::UploadReportResult> {
 
 namespace {
 
+void SetExtraParameter(const std::string& key, mate::Arguments* args) {
+  std::string value;
+  if (args->GetNext(&value))
+    CrashReporter::GetInstance()->SetExtraParameter(key, value);
+  else
+    CrashReporter::GetInstance()->RemoveExtraParameter(key);
+}
+
 
 void Initialize(v8::Local<v8::Object> exports, v8::Local<v8::Value> unused,
                 v8::Local<v8::Context> context, void* priv) {
   mate::Dictionary dict(context->GetIsolate(), exports);
-  auto report = base::Unretained(CrashReporter::GetInstance());
-  dict.SetMethod("start",
-                 base::Bind(&CrashReporter::Start, report));
-  dict.SetMethod("_getUploadedReports",
-                 base::Bind(&CrashReporter::GetUploadedReports, report));
+  auto reporter = base::Unretained(CrashReporter::GetInstance());
+  dict.SetMethod("start", base::Bind(&CrashReporter::Start, reporter));
+  dict.SetMethod("setExtraParameter", &SetExtraParameter);
+  dict.SetMethod("getUploadedReports",
+                 base::Bind(&CrashReporter::GetUploadedReports, reporter));
+  dict.SetMethod("setUploadToServer",
+                 base::Bind(&CrashReporter::SetUploadToServer, reporter));
+  dict.SetMethod("getUploadToServer",
+                 base::Bind(&CrashReporter::GetUploadToServer, reporter));
 }
 
 }  // namespace

@@ -4,11 +4,15 @@
 
 #include "chrome/browser/printing/print_view_manager_base.h"
 
+#include <memory>
+
 #include "base/bind.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/prefs/pref_service.h"
+#include "base/memory/ref_counted_memory.h"
+#include "base/memory/ptr_util.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
+#include "components/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
@@ -22,6 +26,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "printing/pdf_metafile_skia.h"
@@ -61,9 +66,12 @@ PrintViewManagerBase::~PrintViewManagerBase() {
 }
 
 #if !defined(DISABLE_BASIC_PRINTING)
-bool PrintViewManagerBase::PrintNow(bool silent, bool print_background) {
-  return PrintNowInternal(new PrintMsg_PrintPages(
-      routing_id(), silent, print_background));
+bool PrintViewManagerBase::PrintNow(content::RenderFrameHost* rfh,
+                                    bool silent, bool print_background) {
+  int32_t id = rfh->GetRoutingID();
+  return PrintNowInternal(
+      rfh,
+      base::MakeUnique<PrintMsg_PrintPages>(id, silent, print_background));
 }
 #endif  // !DISABLE_BASIC_PRINTING
 
@@ -132,7 +140,8 @@ void PrintViewManagerBase::OnDidPrintPage(
     }
   }
 
-  scoped_ptr<PdfMetafileSkia> metafile(new PdfMetafileSkia);
+  std::unique_ptr<PdfMetafileSkia> metafile(
+      new PdfMetafileSkia(PDF_SKIA_DOCUMENT_TYPE));
   if (metafile_must_be_valid) {
     if (!metafile->InitFromData(shared_buf.memory(), params.data_size)) {
       NOTREACHED() << "Invalid metafile header";
@@ -144,20 +153,25 @@ void PrintViewManagerBase::OnDidPrintPage(
 #if !defined(OS_WIN)
   // Update the rendered document. It will send notifications to the listener.
   document->SetPage(params.page_number,
-                    metafile.Pass(),
+                    std::move(metafile),
                     params.page_size,
                     params.content_area);
 
   ShouldQuitFromInnerMessageLoop();
 #else
   if (metafile_must_be_valid) {
+    bool print_text_with_gdi =
+        document->settings().print_text_with_gdi() &&
+        !document->settings().printer_is_xps();
+
     scoped_refptr<base::RefCountedBytes> bytes = new base::RefCountedBytes(
         reinterpret_cast<const unsigned char*>(shared_buf.memory()),
         params.data_size);
 
     document->DebugDumpData(bytes.get(), FILE_PATH_LITERAL(".pdf"));
     print_job_->StartPdfToEmfConversion(
-        bytes, params.page_size, params.content_area);
+        bytes, params.page_size, params.content_area,
+        print_text_with_gdi);
   }
 #endif  // !OS_WIN
 }
@@ -180,7 +194,9 @@ void PrintViewManagerBase::OnShowInvalidPrinterSettingsError() {
   LOG(ERROR) << "Invalid printer settings";
 }
 
-bool PrintViewManagerBase::OnMessageReceived(const IPC::Message& message) {
+bool PrintViewManagerBase::OnMessageReceived(
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintViewManagerBase, message)
     IPC_MESSAGE_HANDLER(PrintHostMsg_DidGetPrintedPagesCount,
@@ -305,7 +321,7 @@ void PrintViewManagerBase::ShouldQuitFromInnerMessageLoop() {
       inside_inner_message_loop_) {
     // We are in a message loop created by RenderAllMissingPagesNow. Quit from
     // it.
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
     inside_inner_message_loop_ = false;
   }
 }
@@ -411,9 +427,9 @@ bool PrintViewManagerBase::RunInnerMessageLoop() {
   // memory-bound.
   static const int kPrinterSettingsTimeout = 60000;
   base::OneShotTimer quit_timer;
-  quit_timer.Start(FROM_HERE,
-                   TimeDelta::FromMilliseconds(kPrinterSettingsTimeout),
-                   base::MessageLoop::current(), &base::MessageLoop::Quit);
+  quit_timer.Start(
+      FROM_HERE, TimeDelta::FromMilliseconds(kPrinterSettingsTimeout),
+      base::MessageLoop::current(), &base::MessageLoop::QuitWhenIdle);
 
   inside_inner_message_loop_ = true;
 
@@ -421,7 +437,7 @@ bool PrintViewManagerBase::RunInnerMessageLoop() {
   {
     base::MessageLoop::ScopedNestableTaskAllower allow(
         base::MessageLoop::current());
-    base::MessageLoop::current()->Run();
+    base::RunLoop().Run();
   }
 
   bool success = true;
@@ -463,13 +479,13 @@ bool PrintViewManagerBase::OpportunisticallyCreatePrintJob(int cookie) {
   return true;
 }
 
-bool PrintViewManagerBase::PrintNowInternal(IPC::Message* message) {
-  // Don't print / print preview interstitials.
-  if (web_contents()->ShowingInterstitialPage()) {
-    delete message;
+bool PrintViewManagerBase::PrintNowInternal(
+    content::RenderFrameHost* rfh,
+    std::unique_ptr<IPC::Message> message) {
+  // Don't print / print preview interstitials or crashed tabs.
+  if (web_contents()->ShowingInterstitialPage() || web_contents()->IsCrashed())
     return false;
-  }
-  return Send(message);
+  return rfh->Send(message.release());
 }
 
 void PrintViewManagerBase::ReleasePrinterQuery() {

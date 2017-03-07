@@ -5,14 +5,14 @@
 #include "atom/browser/api/atom_api_desktop_capturer.h"
 
 #include "atom/common/api/atom_api_native_image.h"
-#include "atom/common/node_includes.h"
 #include "atom/common/native_mate_converters/gfx_converter.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/media/desktop_media_list.h"
 #include "native_mate/dictionary.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capture_options.h"
-#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
-#include "third_party/webrtc/modules/desktop_capture/window_capturer.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_capturer.h"
+
+#include "atom/common/node_includes.h"
 
 namespace mate {
 
@@ -37,7 +37,8 @@ namespace atom {
 
 namespace api {
 
-DesktopCapturer::DesktopCapturer() {
+DesktopCapturer::DesktopCapturer(v8::Isolate* isolate) {
+  Init(isolate);
 }
 
 DesktopCapturer::~DesktopCapturer() {
@@ -59,12 +60,14 @@ void DesktopCapturer::StartHandling(bool capture_window,
   options.set_disable_effects(false);
 #endif
 
-  scoped_ptr<webrtc::ScreenCapturer> screen_capturer(
-      capture_screen ? webrtc::ScreenCapturer::Create(options) : nullptr);
-  scoped_ptr<webrtc::WindowCapturer> window_capturer(
-      capture_window ? webrtc::WindowCapturer::Create(options) : nullptr);
-  media_list_.reset(new NativeDesktopMediaList(screen_capturer.Pass(),
-      window_capturer.Pass()));
+  std::unique_ptr<webrtc::DesktopCapturer> screen_capturer(
+      capture_screen ? webrtc::DesktopCapturer::CreateScreenCapturer(options)
+                     : nullptr);
+  std::unique_ptr<webrtc::DesktopCapturer> window_capturer(
+      capture_window ? webrtc::DesktopCapturer::CreateWindowCapturer(options)
+                     : nullptr);
+  media_list_.reset(new NativeDesktopMediaList(
+      std::move(screen_capturer), std::move(window_capturer)));
 
   media_list_->SetThumbnailSize(thumbnail_size);
   media_list_->StartUpdating(this);
@@ -87,19 +90,20 @@ void DesktopCapturer::OnSourceThumbnailChanged(int index) {
 
 bool DesktopCapturer::OnRefreshFinished() {
   Emit("finished", media_list_->GetSources());
-  media_list_.reset();
   return false;
-}
-
-mate::ObjectTemplateBuilder DesktopCapturer::GetObjectTemplateBuilder(
-      v8::Isolate* isolate) {
-  return mate::ObjectTemplateBuilder(isolate)
-      .SetMethod("startHandling", &DesktopCapturer::StartHandling);
 }
 
 // static
 mate::Handle<DesktopCapturer> DesktopCapturer::Create(v8::Isolate* isolate) {
-  return mate::CreateHandle(isolate, new DesktopCapturer);
+  return mate::CreateHandle(isolate, new DesktopCapturer(isolate));
+}
+
+// static
+void DesktopCapturer::BuildPrototype(
+    v8::Isolate* isolate, v8::Local<v8::FunctionTemplate> prototype) {
+  prototype->SetClassName(mate::StringToV8(isolate, "DesktopCapturer"));
+  mate::ObjectTemplateBuilder(isolate, prototype->PrototypeTemplate())
+      .SetMethod("startHandling", &DesktopCapturer::StartHandling);
 }
 
 }  // namespace api

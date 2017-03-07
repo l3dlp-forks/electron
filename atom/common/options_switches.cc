@@ -45,6 +45,9 @@ const char kAcceptFirstMouse[] = "acceptFirstMouse";
 // Whether window size should include window frame.
 const char kUseContentSize[] = "useContentSize";
 
+// Whether window zoom should be to page width.
+const char kZoomToPageWidth[] = "zoomToPageWidth";
+
 // The requested title bar style for the window
 const char kTitleBarStyle[] = "titleBarStyle";
 
@@ -66,7 +69,7 @@ const char kType[] = "type";
 // Disable auto-hiding cursor.
 const char kDisableAutoHideCursor[] = "disableAutoHideCursor";
 
-// Use the OS X's standard window instead of the textured window.
+// Use the macOS' standard window instead of the textured window.
 const char kStandardWindow[] = "standardWindow";
 
 // Default browser window background color.
@@ -75,8 +78,14 @@ const char kBackgroundColor[] = "backgroundColor";
 // Whether the window should have a shadow.
 const char kHasShadow[] = "hasShadow";
 
+// Whether the window can be activated.
+const char kFocusable[] = "focusable";
+
 // The WebPreferences.
 const char kWebPreferences[] = "webPreferences";
+
+// Add a vibrancy effect to the browser window
+const char kVibrancyType[] = "vibrancy";
 
 // The factor of which page should be zoomed.
 const char kZoomFactor[] = "zoomFactor";
@@ -90,11 +99,11 @@ const char kPreloadURL[] = "preloadURL";
 // Enable the node integration.
 const char kNodeIntegration[] = "nodeIntegration";
 
-// Instancd ID of guest WebContents.
-const char kGuestInstanceID[] = "guestInstanceId";
+// Enable context isolation of Electron APIs and preload script
+const char kContextIsolation[] = "contextIsolation";
 
-// Enable DirectWrite on Windows.
-const char kDirectWrite[] = "directWrite";
+// Instance ID of guest WebContents.
+const char kGuestInstanceID[] = "guestInstanceId";
 
 // Web runtime features.
 const char kExperimentalFeatures[]       = "experimentalFeatures";
@@ -103,12 +112,22 @@ const char kExperimentalCanvasFeatures[] = "experimentalCanvasFeatures";
 // Opener window's ID.
 const char kOpenerID[] = "openerId";
 
+// Enable the rubber banding effect.
+const char kScrollBounce[] = "scrollBounce";
+
 // Enable blink features.
+// TODO(kevinsawicki) Rename to enableBlinkFeatures in 2.0
 const char kBlinkFeatures[] = "blinkFeatures";
+
+// Disable blink features.
+const char kDisableBlinkFeatures[] = "disableBlinkFeatures";
 
 }  // namespace options
 
 namespace switches {
+
+// Enable chromium sandbox.
+const char kEnableSandbox[] = "enable-sandbox";
 
 // Enable plugins.
 const char kEnablePlugins[] = "enable-plugins";
@@ -119,35 +138,31 @@ const char kPpapiFlashPath[] = "ppapi-flash-path";
 // Ppapi Flash version.
 const char kPpapiFlashVersion[] = "ppapi-flash-version";
 
-// Path to client certificate.
-const char kClientCertificate[] = "client-certificate";
-
 // Disable HTTP cache.
 const char kDisableHttpCache[] = "disable-http-cache";
 
-// Register schemes to standard.
-const char kRegisterStandardSchemes[] = "register-standard-schemes";
+// The list of standard schemes.
+const char kStandardSchemes[] = "standard-schemes";
 
 // Register schemes to handle service worker.
 const char kRegisterServiceWorkerSchemes[] = "register-service-worker-schemes";
 
-// The minimum SSL/TLS version ("tls1", "tls1.1", or "tls1.2") that
-// TLS fallback will accept.
-const char kSSLVersionFallbackMin[] = "ssl-version-fallback-min";
-
-// Comma-separated list of SSL cipher suites to disable.
-const char kCipherSuiteBlacklist[] = "cipher-suite-blacklist";
+// Register schemes as secure.
+const char kSecureSchemes[] = "secure-schemes";
 
 // The browser process app model ID
 const char kAppUserModelId[] = "app-user-model-id";
 
 // The command line switch versions of the options.
-const char kZoomFactor[]                 = "zoom-factor";
-const char kPreloadScript[]              = "preload";
-const char kPreloadURL[]                 = "preload-url";
-const char kNodeIntegration[]            = "node-integration";
-const char kGuestInstanceID[]            = "guest-instance-id";
-const char kOpenerID[]                   = "opener-id";
+const char kBackgroundColor[]  = "background-color";
+const char kPreloadScript[]    = "preload";
+const char kPreloadURL[]       = "preload-url";
+const char kNodeIntegration[]  = "node-integration";
+const char kContextIsolation[] = "context-isolation";
+const char kGuestInstanceID[]  = "guest-instance-id";
+const char kOpenerID[]         = "opener-id";
+const char kScrollBounce[]     = "scroll-bounce";
+const char kHiddenPage[]       = "hidden-page";
 
 // Widevine options
 // Path to Widevine CDM binaries.

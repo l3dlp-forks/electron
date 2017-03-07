@@ -7,7 +7,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/gfx/text_utils.h"
+#include "ui/views/animation/flood_fill_ink_drop_ripple.h"
+#include "ui/views/animation/ink_drop_host_view.h"
+#include "ui/views/animation/ink_drop_impl.h"
 #include "ui/views/controls/button/label_button_border.h"
 
 namespace atom {
@@ -15,7 +19,7 @@ namespace atom {
 namespace {
 
 // Filter out the "&" in menu label.
-base::string16 FilterAccecelator(const base::string16& label) {
+base::string16 FilterAccelerator(const base::string16& label) {
   base::string16 out;
   base::RemoveChars(label, base::ASCIIToUTF16("&").c_str(), &out);
   return out;
@@ -23,10 +27,10 @@ base::string16 FilterAccecelator(const base::string16& label) {
 
 }  // namespace
 
-SubmenuButton::SubmenuButton(views::ButtonListener* listener,
-                             const base::string16& title,
-                             views::MenuButtonListener* menu_button_listener)
-    : views::MenuButton(listener, FilterAccecelator(title),
+SubmenuButton::SubmenuButton(const base::string16& title,
+                             views::MenuButtonListener* menu_button_listener,
+                             const SkColor& background_color)
+    : views::MenuButton(FilterAccelerator(title),
                         menu_button_listener, false),
       accelerator_(0),
       show_underline_(false),
@@ -34,19 +38,42 @@ SubmenuButton::SubmenuButton(views::ButtonListener* listener,
       underline_end_(-1),
       text_width_(0),
       text_height_(0),
-      underline_color_(SK_ColorBLACK) {
+      underline_color_(SK_ColorBLACK),
+      background_color_(background_color) {
 #if defined(OS_LINUX)
   // Dont' use native style border.
-  SetBorder(CreateDefaultBorder().Pass());
+  SetBorder(std::move(CreateDefaultBorder()));
 #endif
 
   if (GetUnderlinePosition(title, &accelerator_, &underline_start_,
                            &underline_end_))
     gfx::Canvas::SizeStringInt(GetText(), GetFontList(), &text_width_,
                                &text_height_, 0, 0);
+
+  SetInkDropMode(InkDropMode::ON);
+  set_ink_drop_base_color(
+      color_utils::BlendTowardOppositeLuma(background_color_, 0x61));
 }
 
 SubmenuButton::~SubmenuButton() {
+}
+
+std::unique_ptr<views::InkDropRipple> SubmenuButton::CreateInkDropRipple()
+    const {
+  std::unique_ptr<views::InkDropRipple> ripple(
+      new views::FloodFillInkDropRipple(
+          size(),
+          GetInkDropCenterBasedOnLastEvent(),
+          GetInkDropBaseColor(),
+          ink_drop_visible_opacity()));
+  return ripple;
+}
+
+std::unique_ptr<views::InkDrop> SubmenuButton::CreateInkDrop() {
+  std::unique_ptr<views::InkDropImpl> ink_drop =
+      CustomButton::CreateDefaultInkDropImpl();
+  ink_drop->SetShowHighlightOnHover(false);
+  return std::move(ink_drop);
 }
 
 void SubmenuButton::SetAcceleratorVisibility(bool visible) {

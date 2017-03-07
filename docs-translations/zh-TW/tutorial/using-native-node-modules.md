@@ -4,7 +4,7 @@
 
 ## 原生 Node 模組的相容性
 
-原生模組可能在 Node 開始使用一個新版本的 V8 時毀損，為了確保你想要用的模組能正確與 Electron 一起運行，你應該檢查是否支援 Electron 內部 Node 版本，你可以查看 [releases](https://github.com/atom/electron/releases) 或是使用 `process.version` (範例請見 [Quick Start](https://github.com/atom/electron/blob/master/docs/tutorial/quick-start.md)) 來檢查哪個 Node 版本是現在的 Electron 使用的。
+原生模組可能在 Node 開始使用一個新版本的 V8 時毀損，為了確保你想要用的模組能正確與 Electron 一起運行，你應該檢查是否支援 Electron 內部 Node 版本，你可以查看 [releases](https://github.com/electron/electron/releases) 或是使用 `process.version` (範例請見 [Quick Start](https://github.com/electron/electron/blob/master/docs/tutorial/quick-start.md)) 來檢查哪個 Node 版本是現在的 Electron 使用的。
 
 你可以考慮給你自己的模組使用 [NAN](https://github.com/nodejs/nan/)，因為它可以較輕易的支援多種版本的 Node，它對於移植舊的模組到新版本的 Node 以便與 Electron 一起運作也是很有用的。
 
@@ -31,7 +31,7 @@ npm install --save-dev electron-rebuild
 你也可以使用 `npm` 安裝模組，步驟與 Node 模組的安裝相同，除了你需要設定一些環境變數：
 
 ```bash
-export npm_config_disturl=https://atom.io/download/atom-shell
+export npm_config_disturl=https://atom.io/download/electron
 export npm_config_target=0.33.1
 export npm_config_arch=x64
 export npm_config_runtime=electron
@@ -44,7 +44,7 @@ HOME=~/.electron-gyp npm install module-name
 
 ```bash
 $ cd /path-to-module/
-$ HOME=~/.electron-gyp node-gyp rebuild --target=0.29.1 --arch=x64 --dist-url=https://atom.io/download/atom-shell
+$ HOME=~/.electron-gyp node-gyp rebuild --target=0.29.1 --arch=x64 --dist-url=https://atom.io/download/electron
 ```
 
 `HOME=~/.electron-gyp` 改變了尋找開發標頭的地方，`--target=0.29.1` 是 Eletron 的版本， `--dist-url=...` 指定了下載標頭到哪， `--arch=x64` 指出模組要建置在 64 位元系統。

@@ -7,8 +7,10 @@
 #include "atom/browser/api/atom_api_web_contents.h"
 #include "atom/common/native_mate_converters/gurl_converter.h"
 #include "content/public/browser/guest_host.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 
 namespace atom {
@@ -21,12 +23,11 @@ const int kDefaultHeight = 300;
 }  // namespace
 
 WebViewGuestDelegate::WebViewGuestDelegate()
-    : guest_opaque_(true),
+    : embedder_zoom_controller_(nullptr),
       guest_host_(nullptr),
       auto_size_enabled_(false),
       is_full_page_plugin_(false),
-      api_web_contents_(nullptr) {
-}
+      api_web_contents_(nullptr) {}
 
 WebViewGuestDelegate::~WebViewGuestDelegate() {
 }
@@ -38,6 +39,10 @@ void WebViewGuestDelegate::Initialize(api::WebContents* api_web_contents) {
 
 void WebViewGuestDelegate::Destroy() {
   // Give the content module an opportunity to perform some cleanup.
+  if (embedder_zoom_controller_) {
+    embedder_zoom_controller_->RemoveObserver(this);
+    embedder_zoom_controller_ = nullptr;
+  }
   guest_host_->WillDestroy();
   guest_host_ = nullptr;
 }
@@ -95,49 +100,22 @@ void WebViewGuestDelegate::SetSize(const SetSizeParams& params) {
   auto_size_enabled_ = enable_auto_size;
 }
 
-void WebViewGuestDelegate::SetAllowTransparency(bool allow) {
-  if (guest_opaque_ != allow)
-    return;
-
-  auto render_view_host = web_contents()->GetRenderViewHost();
-  guest_opaque_ = !allow;
-  if (!render_view_host->GetView())
-    return;
-
-  if (guest_opaque_) {
-    render_view_host->GetView()->SetBackgroundColorToDefault();
-  } else {
-    render_view_host->GetView()->SetBackgroundColor(SK_ColorTRANSPARENT);
+void WebViewGuestDelegate::DidFinishNavigation(
+    content::NavigationHandle* navigation_handle) {
+  if (navigation_handle->HasCommitted() && !navigation_handle->IsErrorPage()) {
+    auto is_main_frame = navigation_handle->IsInMainFrame();
+    auto url = navigation_handle->GetURL();
+    api_web_contents_->Emit("load-commit", url, is_main_frame);
   }
-}
-
-void WebViewGuestDelegate::HandleKeyboardEvent(
-    content::WebContents* source,
-    const content::NativeWebKeyboardEvent& event) {
-  if (embedder_web_contents_)
-    embedder_web_contents_->GetDelegate()->HandleKeyboardEvent(source, event);
-}
-
-void WebViewGuestDelegate::RenderViewReady() {
-  // We don't want to accidentally set the opacity of an interstitial page.
-  // WebContents::GetRenderWidgetHostView will return the RWHV of an
-  // interstitial page if one is showing at this time. We only want opacity
-  // to apply to web pages.
-  auto render_view_host_view = web_contents()->GetRenderViewHost()->GetView();
-  if (guest_opaque_)
-    render_view_host_view->SetBackgroundColorToDefault();
-  else
-    render_view_host_view->SetBackgroundColor(SK_ColorTRANSPARENT);
-}
-
-void WebViewGuestDelegate::DidCommitProvisionalLoadForFrame(
-    content::RenderFrameHost* render_frame_host,
-    const GURL& url, ui::PageTransition transition_type) {
-  api_web_contents_->Emit("load-commit", url, !render_frame_host->GetParent());
 }
 
 void WebViewGuestDelegate::DidAttach(int guest_proxy_routing_id) {
   api_web_contents_->Emit("did-attach");
+  embedder_zoom_controller_ =
+      WebContentsZoomController::FromWebContents(embedder_web_contents_);
+  auto zoom_controller = api_web_contents_->GetZoomController();
+  embedder_zoom_controller_->AddObserver(this);
+  zoom_controller->SetEmbedderZoomController(embedder_zoom_controller_);
 }
 
 content::WebContents* WebViewGuestDelegate::GetOwnerWebContents() const {
@@ -165,6 +143,22 @@ void WebViewGuestDelegate::WillAttach(
   completion_callback.Run();
 }
 
+void WebViewGuestDelegate::OnZoomLevelChanged(
+    content::WebContents* web_contents,
+    double level,
+    bool is_temporary) {
+  if (web_contents == GetOwnerWebContents()) {
+    if (is_temporary) {
+      api_web_contents_->GetZoomController()->SetTemporaryZoomLevel(level);
+    } else {
+      api_web_contents_->GetZoomController()->SetZoomLevel(level);
+    }
+    // Change the default zoom factor to match the embedders' new zoom level.
+    double zoom_factor = content::ZoomLevelToZoomFactor(level);
+    api_web_contents_->GetZoomController()->SetDefaultZoomFactor(zoom_factor);
+  }
+}
+
 void WebViewGuestDelegate::GuestSizeChangedDueToAutoSize(
     const gfx::Size& old_size, const gfx::Size& new_size) {
   api_web_contents_->Emit("size-changed",
@@ -180,6 +174,18 @@ gfx::Size WebViewGuestDelegate::GetDefaultSize() const {
   } else {
     return gfx::Size(kDefaultWidth, kDefaultHeight);
   }
+}
+
+bool WebViewGuestDelegate::CanBeEmbeddedInsideCrossProcessFrames() {
+  return true;
+}
+
+content::RenderWidgetHost* WebViewGuestDelegate::GetOwnerRenderWidgetHost() {
+  return embedder_web_contents_->GetRenderViewHost()->GetWidget();
+}
+
+content::SiteInstance* WebViewGuestDelegate::GetOwnerSiteInstance() {
+  return embedder_web_contents_->GetSiteInstance();
 }
 
 }  // namespace atom

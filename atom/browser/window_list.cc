@@ -17,7 +17,7 @@ base::LazyInstance<base::ObserverList<WindowListObserver>>::Leaky
     WindowList::observers_ = LAZY_INSTANCE_INITIALIZER;
 
 // static
-WindowList* WindowList::instance_ = NULL;
+WindowList* WindowList::instance_ = nullptr;
 
 // static
 WindowList* WindowList::GetInstance() {
@@ -33,8 +33,8 @@ void WindowList::AddWindow(NativeWindow* window) {
   WindowVector& windows = GetInstance()->windows_;
   windows.push_back(window);
 
-  FOR_EACH_OBSERVER(WindowListObserver, observers_.Get(),
-                    OnWindowAdded(window));
+  for (WindowListObserver& observer : observers_.Get())
+    observer.OnWindowAdded(window);
 }
 
 // static
@@ -43,18 +43,19 @@ void WindowList::RemoveWindow(NativeWindow* window) {
   windows.erase(std::remove(windows.begin(), windows.end(), window),
                 windows.end());
 
-  FOR_EACH_OBSERVER(WindowListObserver, observers_.Get(),
-                    OnWindowRemoved(window));
+  for (WindowListObserver& observer : observers_.Get())
+    observer.OnWindowRemoved(window);
 
-  if (windows.size() == 0)
-    FOR_EACH_OBSERVER(WindowListObserver, observers_.Get(),
-                      OnWindowAllClosed());
+  if (windows.size() == 0) {
+    for (WindowListObserver& observer : observers_.Get())
+      observer.OnWindowAllClosed();
+  }
 }
 
 // static
 void WindowList::WindowCloseCancelled(NativeWindow* window) {
-  FOR_EACH_OBSERVER(WindowListObserver, observers_.Get(),
-                    OnWindowCloseCancelled(window));
+  for (WindowListObserver& observer : observers_.Get())
+    observer.OnWindowCloseCancelled(window);
 }
 
 // static
@@ -70,8 +71,9 @@ void WindowList::RemoveObserver(WindowListObserver* observer) {
 // static
 void WindowList::CloseAllWindows() {
   WindowVector windows = GetInstance()->windows_;
-  for (size_t i = 0; i < windows.size(); ++i)
-    windows[i]->Close();
+  for (const auto& window : windows)
+    if (!window->IsClosed())
+      window->Close();
 }
 
 WindowList::WindowList() {

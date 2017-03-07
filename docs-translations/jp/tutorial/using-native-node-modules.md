@@ -4,7 +4,7 @@ Electronは、ネイティブのNodeモジュールをサポートしていま�
 
 ## ネイティブNodeモジュールとの互換性
 
-Nodeが新しいV8バージョンを使用し始めた時、Nativeモジュールは動作しなくなるかもしれません。ElectronでNativeモジュールが動作するかどうかを確認するために、Electronで使用する内部のNodeバージョンがサポートしているかを確認すべきです。ElectronでNodeが使用しているバージョンを確認するには、[releases](https://github.com/atom/electron/releases)ページを見るか、`process.version` (例えば [Quick Start](https://github.com/atom/electron/blob/master/docs/tutorial/quick-start.md)を見てください)を使用してください。
+Nodeが新しいV8バージョンを使用し始めた時、Nativeモジュールは動作しなくなるかもしれません。ElectronでNativeモジュールが動作するかどうかを確認するために、Electronで使用する内部のNodeバージョンがサポートしているかを確認すべきです。ElectronでNodeが使用しているバージョンを確認するには、[releases](https://github.com/electron/electron/releases)ページを見るか、`process.version` (例えば [Quick Start](https://github.com/electron/electron/blob/master/docs/tutorial/quick-start.md)を見てください)を使用してください。
 
 Nodeの複数バージョンを簡単にサポートできるので、あなたのモジュールに [NAN](https://github.com/nodejs/nan/) を使うことを検討してください。古いバージョンからElectronで動作するNodeの新しいバージョンへ移植するのに役立ちます。
 
@@ -31,7 +31,7 @@ npm install --save-dev electron-rebuild
 モジュールをインストールするために`npm` を使用できます。環境変数の設定を除いて、Nodeモジュールと完全に同じ手順です。
 
 ```bash
-export npm_config_disturl=https://atom.io/download/atom-shell
+export npm_config_disturl=https://atom.io/download/electron
 export npm_config_target=0.33.1
 export npm_config_arch=x64
 export npm_config_runtime=electron
@@ -44,7 +44,7 @@ ElectronのヘッダーでNodeモジュールをビルドするために、ど�
 
 ```bash
 $ cd /path-to-module/
-$ HOME=~/.electron-gyp node-gyp rebuild --target=0.29.1 --arch=x64 --dist-url=https://atom.io/download/atom-shell
+$ HOME=~/.electron-gyp node-gyp rebuild --target=0.29.1 --arch=x64 --dist-url=https://atom.io/download/electron
 ```
 
 開発ヘッダーを探し、 `HOME=~/.electron-gyp` を変更します。`--target=0.29.1`がElectronのバージョンです。 `--dist-url=...` で、どこからヘッダーをダウンロードするかを指定します。`--arch=x64`を使用して、64bit システム用にモジュールをビルドします。

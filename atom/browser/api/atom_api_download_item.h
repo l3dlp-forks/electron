@@ -6,6 +6,7 @@
 #define ATOM_BROWSER_API_ATOM_API_DOWNLOAD_ITEM_H_
 
 #include <string>
+#include <vector>
 
 #include "atom/browser/api/trackable_object.h"
 #include "base/files/file_path.h"
@@ -23,25 +24,32 @@ class DownloadItem : public mate::TrackableObject<DownloadItem>,
   static mate::Handle<DownloadItem> Create(v8::Isolate* isolate,
                                            content::DownloadItem* item);
 
-  // mate::TrackableObject:
   static void BuildPrototype(v8::Isolate* isolate,
-                             v8::Local<v8::ObjectTemplate> prototype);
+                             v8::Local<v8::FunctionTemplate> prototype);
 
   void Pause();
+  bool IsPaused() const;
   void Resume();
+  bool CanResume() const;
   void Cancel();
-  int64 GetReceivedBytes() const;
-  int64 GetTotalBytes() const;
+  int64_t GetReceivedBytes() const;
+  int64_t GetTotalBytes() const;
   std::string GetMimeType() const;
   bool HasUserGesture() const;
   std::string GetFilename() const;
   std::string GetContentDisposition() const;
   const GURL& GetURL() const;
+  const std::vector<GURL>& GetURLChain() const;
+  content::DownloadItem::DownloadState GetState() const;
+  bool IsDone() const;
   void SetSavePath(const base::FilePath& path);
   base::FilePath GetSavePath() const;
+  std::string GetLastModifiedTime() const;
+  std::string GetETag() const;
+  double GetStartTime() const;
 
  protected:
-  explicit DownloadItem(content::DownloadItem* download_item);
+  DownloadItem(v8::Isolate* isolate, content::DownloadItem* download_item);
   ~DownloadItem();
 
   // Override content::DownloadItem::Observer methods
