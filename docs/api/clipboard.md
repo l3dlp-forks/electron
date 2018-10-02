@@ -7,7 +7,7 @@ Process: [Main](../glossary.md#main-process), [Renderer](../glossary.md#renderer
 The following example shows how to write a string to the clipboard:
 
 ```javascript
-const {clipboard} = require('electron')
+const { clipboard } = require('electron')
 clipboard.writeText('Example String')
 ```
 
@@ -15,7 +15,7 @@ On X Window systems, there is also a selection clipboard. To manipulate it
 you need to pass `selection` to each method:
 
 ```javascript
-const {clipboard} = require('electron')
+const { clipboard } = require('electron')
 clipboard.writeText('Example String', 'selection')
 console.log(clipboard.readText('selection'))
 ```
@@ -103,7 +103,7 @@ clipboard.
 
 ```js
 clipboard.write({
-  text: 'https://electron.atom.io',
+  text: 'https://electronjs.org',
   bookmark: 'Electron Homepage'
 })
 ```
@@ -133,24 +133,37 @@ Clears the clipboard content.
 
 Returns `String[]` - An array of supported formats for the clipboard `type`.
 
-### `clipboard.has(data[, type])` _Experimental_
+### `clipboard.has(format[, type])` _Experimental_
 
-* `data` String
+* `format` String
 * `type` String (optional)
 
-Returns `Boolean` - Whether the clipboard supports the format of specified `data`.
+Returns `Boolean` - Whether the clipboard supports the specified `format`.
 
 ```javascript
-const {clipboard} = require('electron')
+const { clipboard } = require('electron')
 console.log(clipboard.has('<p>selection</p>'))
 ```
 
-### `clipboard.read(data[, type])` _Experimental_
+### `clipboard.read(format)` _Experimental_
 
-* `data` String
+* `format` String
+
+Returns `String` - Reads `format` type from the clipboard.
+
+### `clipboard.readBuffer(format)` _Experimental_
+
+* `format` String
+
+Returns `Buffer` - Reads `format` type from the clipboard.
+
+### `clipboard.writeBuffer(format, buffer[, type])` _Experimental_
+
+* `format` String
+* `buffer` Buffer
 * `type` String (optional)
 
-Returns `String` - Reads `data` from the clipboard.
+Writes the `buffer` into the clipboard as `format`.
 
 ### `clipboard.write(data[, type])`
 
@@ -163,7 +176,7 @@ Returns `String` - Reads `data` from the clipboard.
 * `type` String (optional)
 
 ```javascript
-const {clipboard} = require('electron')
-clipboard.write({text: 'test', html: '<b>test</b>'})
+const { clipboard } = require('electron')
+clipboard.write({ text: 'test', html: '<b>test</b>' })
 ```
 Writes `data` to the clipboard.

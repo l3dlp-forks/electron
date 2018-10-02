@@ -25,9 +25,11 @@ class AtomDesktopWindowTreeHostWin : public views::DesktopWindowTreeHostWin {
   ~AtomDesktopWindowTreeHostWin() override;
 
  protected:
-  bool PreHandleMSG(
-      UINT message, WPARAM w_param, LPARAM l_param, LRESULT* result) override;
-  bool GetClientAreaInsets(gfx::Insets* insets) const override;
+  bool PreHandleMSG(UINT message,
+                    WPARAM w_param,
+                    LPARAM l_param,
+                    LRESULT* result) override;
+  bool HasNativeFrame() const override;
 
  private:
   MessageHandlerDelegate* delegate_;  // weak ref

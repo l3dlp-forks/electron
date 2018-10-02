@@ -12,11 +12,21 @@ namespace atom {
 
 AtomContentUtilityClient::AtomContentUtilityClient() {
 #if defined(OS_WIN)
-  handlers_.push_back(new printing::PrintingHandlerWin());
+  handlers_.push_back(std::make_unique<printing::PrintingHandlerWin>());
 #endif
 }
 
-AtomContentUtilityClient::~AtomContentUtilityClient() {
+AtomContentUtilityClient::~AtomContentUtilityClient() {}
+
+bool AtomContentUtilityClient::OnMessageReceived(const IPC::Message& message) {
+#if defined(OS_WIN)
+  for (const auto& handler : handlers_) {
+    if (handler->OnMessageReceived(message))
+      return true;
+  }
+#endif
+
+  return false;
 }
 
 }  // namespace atom

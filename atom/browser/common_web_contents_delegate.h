@@ -6,21 +6,28 @@
 #define ATOM_BROWSER_COMMON_WEB_CONTENTS_DELEGATE_H_
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "brightray/browser/devtools_file_system_indexer.h"
+#include "base/memory/weak_ptr.h"
 #include "brightray/browser/inspectable_web_contents_delegate.h"
 #include "brightray/browser/inspectable_web_contents_impl.h"
 #include "brightray/browser/inspectable_web_contents_view_delegate.h"
+#include "chrome/browser/devtools/devtools_file_system_indexer.h"
 #include "content/public/browser/web_contents_delegate.h"
 
-using brightray::DevToolsFileSystemIndexer;
+#if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
+#include "atom/browser/ui/autofill_popup.h"
+#endif
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace atom {
 
 class AtomBrowserContext;
-class AtomJavaScriptDialogManager;
 class NativeWindow;
 class WebDialogHelper;
 
@@ -30,20 +37,18 @@ class CommonWebContentsDelegate
       public brightray::InspectableWebContentsViewDelegate {
  public:
   CommonWebContentsDelegate();
-  virtual ~CommonWebContentsDelegate();
+  ~CommonWebContentsDelegate() override;
 
   // Creates a InspectableWebContents object and takes onwership of
   // |web_contents|.
   void InitWithWebContents(content::WebContents* web_contents,
-                           AtomBrowserContext* browser_context);
+                           AtomBrowserContext* browser_context,
+                           bool is_guest);
 
   // Set the window as owner window.
   void SetOwnerWindow(NativeWindow* owner_window);
   void SetOwnerWindow(content::WebContents* web_contents,
                       NativeWindow* owner_window);
-
-  // Destroy the managed InspectableWebContents object.
-  void DestroyWebContents();
 
   // Returns the WebContents managed by this delegate.
   content::WebContents* GetWebContents() const;
@@ -65,12 +70,11 @@ class CommonWebContentsDelegate
       content::WebContents* source,
       const content::OpenURLParams& params) override;
   bool CanOverscrollContent() const override;
-  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
-      content::WebContents* source) override;
   content::ColorChooser* OpenColorChooser(
       content::WebContents* web_contents,
       SkColor color,
-      const std::vector<content::ColorSuggestion>& suggestions) override;
+      const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions)
+      override;
   void RunFileChooser(content::RenderFrameHost* render_frame_host,
                       const content::FileChooserParams& params) override;
   void EnumerateDirectory(content::WebContents* web_contents,
@@ -88,6 +92,17 @@ class CommonWebContentsDelegate
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) override;
 
+  // Autofill related events.
+#if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
+  void ShowAutofillPopup(content::RenderFrameHost* frame_host,
+                         content::RenderFrameHost* embedder_frame_host,
+                         bool offscreen,
+                         const gfx::RectF& bounds,
+                         const std::vector<base::string16>& values,
+                         const std::vector<base::string16>& labels);
+  void HideAutofillPopup();
+#endif
+
   // brightray::InspectableWebContentsDelegate:
   void DevToolsSaveToFile(const std::string& url,
                           const std::string& content,
@@ -95,33 +110,32 @@ class CommonWebContentsDelegate
   void DevToolsAppendToFile(const std::string& url,
                             const std::string& content) override;
   void DevToolsRequestFileSystems() override;
-  void DevToolsAddFileSystem(const base::FilePath& path) override;
+  void DevToolsAddFileSystem(const std::string& type,
+                             const base::FilePath& file_system_path) override;
   void DevToolsRemoveFileSystem(
       const base::FilePath& file_system_path) override;
   void DevToolsIndexPath(int request_id,
-                         const std::string& file_system_path) override;
+                         const std::string& file_system_path,
+                         const std::string& excluded_folders_message) override;
   void DevToolsStopIndexing(int request_id) override;
   void DevToolsSearchInPath(int request_id,
                             const std::string& file_system_path,
                             const std::string& query) override;
 
   // brightray::InspectableWebContentsViewDelegate:
-#if defined(TOOLKIT_VIEWS)
+#if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
   gfx::ImageSkia GetDevToolsWindowIcon() override;
 #endif
 #if defined(USE_X11)
-  void GetDevToolsWindowWMClass(
-      std::string* name, std::string* class_name) override;
+  void GetDevToolsWindowWMClass(std::string* name,
+                                std::string* class_name) override;
 #endif
 
+  // Destroy the managed InspectableWebContents object.
+  void ResetManagedWebContents(bool async);
+
  private:
-  // Callback for when DevToolsSaveToFile has completed.
-  void OnDevToolsSaveToFile(const std::string& url);
-
-  // Callback for when DevToolsAppendToFile has completed.
-  void OnDevToolsAppendToFile(const std::string& url);
-
-  //
+  // DevTools index event callbacks.
   void OnDevToolsIndexingWorkCalculated(int request_id,
                                         const std::string& file_system_path,
                                         int total_work);
@@ -140,14 +154,20 @@ class CommonWebContentsDelegate
   // The window that this WebContents belongs to.
   base::WeakPtr<NativeWindow> owner_window_;
 
+  bool offscreen_ = false;
+
   // Whether window is fullscreened by HTML5 api.
-  bool html_fullscreen_;
+  bool html_fullscreen_ = false;
 
   // Whether window is fullscreened by window api.
-  bool native_fullscreen_;
+  bool native_fullscreen_ = false;
 
+  // UI related helper classes.
+#if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
+  std::unique_ptr<AutofillPopup> autofill_popup_;
+#endif
   std::unique_ptr<WebDialogHelper> web_dialog_helper_;
-  std::unique_ptr<AtomJavaScriptDialogManager> dialog_manager_;
+
   scoped_refptr<DevToolsFileSystemIndexer> devtools_file_system_indexer_;
 
   // Make sure BrowserContext is alwasys destroyed after WebContents.
@@ -164,11 +184,14 @@ class CommonWebContentsDelegate
   PathsMap saved_files_;
 
   // Map id to index job, used for file system indexing requests from devtools.
-  typedef std::map<
-      int,
-      scoped_refptr<DevToolsFileSystemIndexer::FileSystemIndexingJob>>
-      DevToolsIndexingJobsMap;
+  typedef std::
+      map<int, scoped_refptr<DevToolsFileSystemIndexer::FileSystemIndexingJob>>
+          DevToolsIndexingJobsMap;
   DevToolsIndexingJobsMap devtools_indexing_jobs_;
+
+  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
+
+  base::WeakPtrFactory<CommonWebContentsDelegate> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CommonWebContentsDelegate);
 };

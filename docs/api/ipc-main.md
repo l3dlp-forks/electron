@@ -16,8 +16,8 @@ It is also possible to send messages from the main process to the renderer
 process, see [webContents.send][web-contents-send] for more information.
 
 * When sending a message, the event name is the `channel`.
-* To reply a synchronous message, you need to set `event.returnValue`.
-* To send an asynchronous back to the sender, you can use
+* To reply to a synchronous message, you need to set `event.returnValue`.
+* To send an asynchronous message back to the sender, you can use
   `event.sender.send(...)`.
 
 An example of sending and handling messages between the render and main
@@ -25,21 +25,21 @@ processes:
 
 ```javascript
 // In main process.
-const {ipcMain} = require('electron')
+const { ipcMain } = require('electron')
 ipcMain.on('asynchronous-message', (event, arg) => {
-  console.log(arg)  // prints "ping"
+  console.log(arg) // prints "ping"
   event.sender.send('asynchronous-reply', 'pong')
 })
 
 ipcMain.on('synchronous-message', (event, arg) => {
-  console.log(arg)  // prints "ping"
+  console.log(arg) // prints "ping"
   event.returnValue = 'pong'
 })
 ```
 
 ```javascript
 // In renderer process (web page).
-const {ipcRenderer} = require('electron')
+const { ipcRenderer } = require('electron')
 console.log(ipcRenderer.sendSync('synchronous-message', 'ping')) // prints "pong"
 
 ipcRenderer.on('asynchronous-reply', (event, arg) => {
@@ -78,9 +78,9 @@ Removes the specified `listener` from the listener array for the specified
 
 ### `ipcMain.removeAllListeners([channel])`
 
-* `channel` String (optional)
+* `channel` String
 
-Removes all listeners, or those of the specified `channel`.
+Removes listeners of the specified `channel`.
 
 ## Event object
 
@@ -96,4 +96,4 @@ Returns the `webContents` that sent the message, you can call
 `event.sender.send` to reply to the asynchronous message, see
 [webContents.send][web-contents-send] for more information.
 
-[web-contents-send]: web-contents.md#webcontentssendchannel-arg1-arg2-
+[web-contents-send]: web-contents.md#contentssendchannel-arg1-arg2-

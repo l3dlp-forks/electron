@@ -15,7 +15,17 @@ using content::BrowserThread;
 
 namespace atom {
 
+namespace {
+
+int disable_protocol_intercept_flag_key = 0;
+
+}  // namespace
+
 typedef net::URLRequestJobFactory::ProtocolHandler ProtocolHandler;
+
+const void* DisableProtocolInterceptFlagKey() {
+  return &disable_protocol_intercept_flag_key;
+}
 
 AtomURLRequestJobFactory::AtomURLRequestJobFactory() {}
 
@@ -50,15 +60,16 @@ bool AtomURLRequestJobFactory::InterceptProtocol(
     return false;
   ProtocolHandler* original_protocol_handler = protocol_handler_map_[scheme];
   protocol_handler_map_[scheme] = protocol_handler.release();
-  original_protocols_.set(scheme, base::WrapUnique(original_protocol_handler));
+  original_protocols_[scheme].reset(original_protocol_handler);
   return true;
 }
 
 bool AtomURLRequestJobFactory::UninterceptProtocol(const std::string& scheme) {
-  if (!original_protocols_.contains(scheme))
+  auto it = original_protocols_.find(scheme);
+  if (it == original_protocols_.end())
     return false;
-  protocol_handler_map_[scheme] =
-      original_protocols_.take_and_erase(scheme).release();
+  protocol_handler_map_[scheme] = it->second.release();
+  original_protocols_.erase(it);
   return true;
 }
 
@@ -78,7 +89,10 @@ bool AtomURLRequestJobFactory::HasProtocolHandler(
 }
 
 void AtomURLRequestJobFactory::Clear() {
-  base::STLDeleteValues(&protocol_handler_map_);
+  for (auto& it : protocol_handler_map_)
+    delete it.second;
+  protocol_handler_map_.clear();
+  original_protocols_.clear();
 }
 
 net::URLRequestJob* AtomURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
@@ -89,6 +103,8 @@ net::URLRequestJob* AtomURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
 
   auto it = protocol_handler_map_.find(scheme);
   if (it == protocol_handler_map_.end())
+    return nullptr;
+  if (request->GetUserData(DisableProtocolInterceptFlagKey()))
     return nullptr;
   return it->second->MaybeCreateJob(request, network_delegate);
 }
@@ -111,20 +127,16 @@ bool AtomURLRequestJobFactory::IsHandledProtocol(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   return HasProtocolHandler(scheme) ||
-      net::URLRequest::IsHandledProtocol(scheme);
-}
-
-bool AtomURLRequestJobFactory::IsHandledURL(const GURL& url) const {
-  if (!url.is_valid()) {
-    // We handle error cases.
-    return true;
-  }
-  return IsHandledProtocol(url.scheme());
+         net::URLRequest::IsHandledProtocol(scheme);
 }
 
 bool AtomURLRequestJobFactory::IsSafeRedirectTarget(
     const GURL& location) const {
-  return IsHandledURL(location);
+  if (!location.is_valid()) {
+    // We handle error cases.
+    return true;
+  }
+  return IsHandledProtocol(location.scheme());
 }
 
 }  // namespace atom

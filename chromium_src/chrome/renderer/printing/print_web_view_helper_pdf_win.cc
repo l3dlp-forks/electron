@@ -14,9 +14,7 @@
 #include "printing/page_size_margins.h"
 #include "printing/pdf_metafile_skia.h"
 #include "printing/units.h"
-#include "skia/ext/platform_device.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace printing {
 
@@ -31,18 +29,15 @@ bool PrintWebViewHelper::RenderPreviewPage(
   std::unique_ptr<PdfMetafileSkia> draft_metafile;
   PdfMetafileSkia* initial_render_metafile = print_preview_context_.metafile();
   if (print_preview_context_.IsModifiable() && is_print_ready_metafile_sent_) {
-    draft_metafile.reset(new PdfMetafileSkia(PDF_SKIA_DOCUMENT_TYPE));
+    draft_metafile.reset(new PdfMetafileSkia());
     initial_render_metafile = draft_metafile.get();
   }
 
   base::TimeTicks begin_time = base::TimeTicks::Now();
-  PrintPageInternal(page_params,
-                    print_preview_context_.prepared_frame(),
-                    initial_render_metafile,
-                    NULL,
-                    NULL);
-  print_preview_context_.RenderedPreviewPage(
-      base::TimeTicks::Now() - begin_time);
+  PrintPageInternal(page_params, print_preview_context_.prepared_frame(),
+                    initial_render_metafile, NULL, NULL);
+  print_preview_context_.RenderedPreviewPage(base::TimeTicks::Now() -
+                                             begin_time);
   if (draft_metafile.get()) {
     draft_metafile->FinishDocument();
   } else if (print_preview_context_.IsModifiable() &&
@@ -50,14 +45,14 @@ bool PrintWebViewHelper::RenderPreviewPage(
     DCHECK(!draft_metafile.get());
     draft_metafile =
         print_preview_context_.metafile()->GetMetafileForCurrentPage(
-            PDF_SKIA_DOCUMENT_TYPE);
+            SkiaDocumentType::PDF);
   }
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
 
 bool PrintWebViewHelper::PrintPagesNative(blink::WebLocalFrame* frame,
                                           int page_count) {
-  PdfMetafileSkia metafile(PDF_SKIA_DOCUMENT_TYPE);
+  PdfMetafileSkia metafile;
   if (!metafile.Init())
     return false;
 
@@ -85,10 +80,7 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   page_params.params = params.params;
   for (size_t i = 0; i < printed_pages.size(); ++i) {
     page_params.page_number = printed_pages[i];
-    PrintPageInternal(page_params,
-                      frame,
-                      &metafile,
-                      &page_size_in_dpi[i],
+    PrintPageInternal(page_params, frame, &metafile, &page_size_in_dpi[i],
                       &content_area_in_dpi[i]);
   }
 
@@ -98,8 +90,8 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   metafile.FinishDocument();
 
   PrintHostMsg_DidPrintPage_Params printed_page_params;
-  if (!CopyMetafileDataToSharedMem(
-          metafile, &printed_page_params.metafile_data_handle)) {
+  if (!CopyMetafileDataToSharedMem(metafile,
+                                   &printed_page_params.metafile_data_handle)) {
     return false;
   }
 
@@ -139,10 +131,10 @@ void PrintWebViewHelper::PrintPageInternal(
   // Calculate the actual page size and content area in dpi.
   if (page_size_in_dpi) {
     *page_size_in_dpi =
-        gfx::Size(static_cast<int>(ConvertUnitDouble(
-                      page_size.width(), kPointsPerInch, dpi)),
-                  static_cast<int>(ConvertUnitDouble(
-                      page_size.height(), kPointsPerInch, dpi)));
+        gfx::Size(static_cast<int>(ConvertUnitDouble(page_size.width(),
+                                                     kPointsPerInch, dpi)),
+                  static_cast<int>(ConvertUnitDouble(page_size.height(),
+                                                     kPointsPerInch, dpi)));
   }
 
   if (content_area_in_dpi) {
@@ -151,22 +143,21 @@ void PrintWebViewHelper::PrintPageInternal(
         gfx::Rect(0, 0, page_size_in_dpi->width(), page_size_in_dpi->height());
   }
 
-  gfx::Rect canvas_area =
-      content_area;
+  gfx::Rect canvas_area = content_area;
 #if 0
       params.params.display_header_footer ? gfx::Rect(page_size) : content_area;
 #endif
 
   float webkit_page_shrink_factor =
-      frame->getPrintPageShrink(params.page_number);
+      frame->GetPrintPageShrink(params.page_number);
   float scale_factor = css_scale_factor * webkit_page_shrink_factor;
 
-  SkCanvas* canvas = metafile->GetVectorCanvasForNewPage(
-      page_size, canvas_area, scale_factor);
+  cc::PaintCanvas* canvas =
+      metafile->GetVectorCanvasForNewPage(page_size, canvas_area, scale_factor);
   if (!canvas)
     return;
 
-  MetafileSkiaWrapper::SetMetafileOnCanvas(*canvas, metafile);
+  MetafileSkiaWrapper::SetMetafileOnCanvas(canvas, metafile);
 
 #if 0
   if (params.params.display_header_footer) {
@@ -181,12 +172,9 @@ void PrintWebViewHelper::PrintPageInternal(
   }
 #endif
 
-  float webkit_scale_factor = RenderPageContent(frame,
-                                                params.page_number,
-                                                canvas_area,
-                                                content_area,
-                                                scale_factor,
-                                                canvas);
+  float webkit_scale_factor =
+      RenderPageContent(frame, params.page_number, canvas_area, content_area,
+                        scale_factor, canvas);
   DCHECK_GT(webkit_scale_factor, 0.0f);
   // Done printing. Close the device context to retrieve the compiled metafile.
   if (!metafile->FinishPage())

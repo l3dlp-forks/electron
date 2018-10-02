@@ -7,7 +7,9 @@
 #include <stdio.h>
 
 #include "base/cancelable_callback.h"
+#include "base/environment.h"
 #include "base/files/file_util.h"
+#include "base/nix/xdg_util.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "url/gurl.h"
@@ -17,8 +19,7 @@
 
 namespace {
 
-bool XDGUtilV(const std::vector<std::string>& argv,
-             const bool wait_for_exit) {
+bool XDGUtilV(const std::vector<std::string>& argv, const bool wait_for_exit) {
   base::LaunchOptions options;
   options.allow_new_privs = true;
   // xdg-open can fall back on mailcap which eventually might plumb through
@@ -31,16 +32,15 @@ bool XDGUtilV(const std::vector<std::string>& argv,
   if (!process.IsValid())
     return false;
 
-  if (!wait_for_exit) {
-    base::EnsureProcessGetsReaped(process.Pid());
-    return true;
+  if (wait_for_exit) {
+    int exit_code = -1;
+    if (!process.WaitForExit(&exit_code))
+      return false;
+    return (exit_code == 0);
   }
 
-  int exit_code = -1;
-  if (!process.WaitForExit(&exit_code))
-    return false;
-
-  return (exit_code == 0);
+  base::EnsureProcessGetsReaped(std::move(process));
+  return true;
 }
 
 bool XDGUtil(const std::string& util,
@@ -73,11 +73,11 @@ bool ShowItemInFolder(const base::FilePath& full_path) {
   if (!base::DirectoryExists(dir))
     return false;
 
-  return XDGOpen(dir.value(), true);
+  return XDGOpen(dir.value(), false);
 }
 
 bool OpenItem(const base::FilePath& full_path) {
-  return XDGOpen(full_path.value(), true);
+  return XDGOpen(full_path.value(), false);
 }
 
 bool OpenExternal(const GURL& url, bool activate) {
@@ -89,7 +89,8 @@ bool OpenExternal(const GURL& url, bool activate) {
     return XDGOpen(url.spec(), false);
 }
 
-void OpenExternal(const GURL& url, bool activate,
+void OpenExternal(const GURL& url,
+                  bool activate,
                   const OpenExternalCallback& callback) {
   // TODO(gabriel): Implement async open if callback is specified
   callback.Run(OpenExternal(url, activate) ? "" : "Failed to open");
@@ -100,7 +101,18 @@ bool MoveItemToTrash(const base::FilePath& full_path) {
   if (getenv(ELECTRON_TRASH) != NULL) {
     trash = getenv(ELECTRON_TRASH);
   } else {
-    trash = ELECTRON_DEFAULT_TRASH;
+    // Determine desktop environment and set accordingly.
+    std::unique_ptr<base::Environment> env(base::Environment::Create());
+    base::nix::DesktopEnvironment desktop_env(
+        base::nix::GetDesktopEnvironment(env.get()));
+    if (desktop_env == base::nix::DESKTOP_ENVIRONMENT_KDE4 ||
+        desktop_env == base::nix::DESKTOP_ENVIRONMENT_KDE5) {
+      trash = "kioclient5";
+    } else if (desktop_env == base::nix::DESKTOP_ENVIRONMENT_KDE3) {
+      trash = "kioclient";
+    } else {
+      trash = ELECTRON_DEFAULT_TRASH;
+    }
   }
 
   std::vector<std::string> argv;
@@ -112,6 +124,10 @@ bool MoveItemToTrash(const base::FilePath& full_path) {
     argv.push_back("trash:/");
   } else if (trash.compare("trash-cli") == 0) {
     argv.push_back("trash-put");
+    argv.push_back(full_path.value());
+  } else if (trash.compare("gio") == 0) {
+    argv.push_back("gio");
+    argv.push_back("trash");
     argv.push_back(full_path.value());
   } else {
     argv.push_back(ELECTRON_DEFAULT_TRASH);

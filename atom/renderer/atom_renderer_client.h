@@ -5,32 +5,33 @@
 #ifndef ATOM_RENDERER_ATOM_RENDERER_CLIENT_H_
 #define ATOM_RENDERER_ATOM_RENDERER_CLIENT_H_
 
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "content/public/renderer/content_renderer_client.h"
+#include "atom/renderer/renderer_client_base.h"
+
+namespace node {
+class Environment;
+}
 
 namespace atom {
 
 class AtomBindings;
-class PreferencesManager;
 class NodeBindings;
 
-class AtomRendererClient : public content::ContentRendererClient {
+class AtomRendererClient : public RendererClientBase {
  public:
   AtomRendererClient();
-  virtual ~AtomRendererClient();
+  ~AtomRendererClient() override;
 
-  void DidClearWindowObject(content::RenderFrame* render_frame);
-  void DidCreateScriptContext(
-      v8::Handle<v8::Context> context, content::RenderFrame* render_frame);
-  void WillReleaseScriptContext(
-      v8::Handle<v8::Context> context, content::RenderFrame* render_frame);
-
-  // Get the context that the Electron API is running in.
-  v8::Local<v8::Context> GetContext(
-      blink::WebFrame* frame, v8::Isolate* isolate);
-  bool isolated_world() { return isolated_world_; }
+  // atom::RendererClientBase:
+  void DidCreateScriptContext(v8::Handle<v8::Context> context,
+                              content::RenderFrame* render_frame) override;
+  void WillReleaseScriptContext(v8::Handle<v8::Context> context,
+                                content::RenderFrame* render_frame) override;
+  void SetupMainWorldOverrides(v8::Handle<v8::Context> context) override;
 
  private:
   enum NodeIntegration {
@@ -46,33 +47,34 @@ class AtomRendererClient : public content::ContentRendererClient {
   void RenderViewCreated(content::RenderView*) override;
   void RunScriptsAtDocumentStart(content::RenderFrame* render_frame) override;
   void RunScriptsAtDocumentEnd(content::RenderFrame* render_frame) override;
-  blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
-      blink::WebSpeechSynthesizerClient* client) override;
-  bool OverrideCreatePlugin(content::RenderFrame* render_frame,
-                            blink::WebLocalFrame* frame,
-                            const blink::WebPluginParams& params,
-                            blink::WebPlugin** plugin) override;
   bool ShouldFork(blink::WebLocalFrame* frame,
                   const GURL& url,
                   const std::string& http_method,
                   bool is_initial_navigation,
                   bool is_server_redirect,
                   bool* send_referrer) override;
-  content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
-      content::RenderFrame* render_frame,
-      const std::string& mime_type,
-      const GURL& original_url) override;
-  void AddSupportedKeySystems(
-      std::vector<std::unique_ptr<::media::KeySystemProperties>>* key_systems)
-      override;
+  void DidInitializeWorkerContextOnWorkerThread(
+      v8::Local<v8::Context> context) override;
+  void WillDestroyWorkerContextOnWorkerThread(
+      v8::Local<v8::Context> context) override;
+
+  node::Environment* GetEnvironment(content::RenderFrame* frame) const;
 
   // Whether the node integration has been initialized.
-  bool node_integration_initialized_;
+  bool node_integration_initialized_ = false;
 
   std::unique_ptr<NodeBindings> node_bindings_;
   std::unique_ptr<AtomBindings> atom_bindings_;
-  std::unique_ptr<PreferencesManager> preferences_manager_;
-  bool isolated_world_;
+
+  // The node::Environment::GetCurrent API does not return nullptr when it
+  // is called for a context without node::Environment, so we have to keep
+  // a book of the environments created.
+  std::set<node::Environment*> environments_;
+
+  // Getting main script context from web frame would lazily initializes
+  // its script context. Doing so in a web page without scripts would trigger
+  // assertion, so we have to keep a book of injected web frames.
+  std::set<content::RenderFrame*> injected_frames_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomRendererClient);
 };

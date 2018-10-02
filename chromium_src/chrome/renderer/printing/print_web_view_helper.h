@@ -16,10 +16,10 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_frame_observer_tracker.h"
 #include "printing/pdf_metafile_skia.h"
-#include "third_party/WebKit/public/platform/WebCanvas.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/blink/public/platform/web_canvas.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_print_params.h"
 #include "ui/gfx/geometry/size.h"
 
 struct PrintMsg_Print_Params;
@@ -32,7 +32,6 @@ class DictionaryValue;
 }
 
 namespace blink {
-class WebFrame;
 class WebView;
 }
 
@@ -68,7 +67,7 @@ class PrintWebViewHelper
       public content::RenderFrameObserverTracker<PrintWebViewHelper> {
  public:
   explicit PrintWebViewHelper(content::RenderFrame* render_frame);
-  virtual ~PrintWebViewHelper();
+  ~PrintWebViewHelper() override;
 
   void PrintNode(const blink::WebNode& node);
 
@@ -78,6 +77,7 @@ class PrintWebViewHelper
     FAIL_PRINT_INIT,
     FAIL_PRINT,
     FAIL_PREVIEW,
+    INVALID_SETTINGS,
   };
 
   enum PrintPreviewErrorBuckets {
@@ -99,11 +99,12 @@ class PrintWebViewHelper
 
   // Message handlers ---------------------------------------------------------
 #if !defined(DISABLE_BASIC_PRINTING)
-  void OnPrintPages(bool silent, bool print_background);
+  void OnPrintPages(bool silent,
+                    bool print_background,
+                    const base::string16& device_name);
   void OnPrintingDone(bool success);
 #endif  // !DISABLE_BASIC_PRINTING
   void OnPrintPreview(const base::DictionaryValue& settings);
-
 
   // Get |page_size| and |content_area| information from
   // |page_layout_in_points|.
@@ -129,7 +130,6 @@ class PrintWebViewHelper
   bool RenderPreviewPage(int page_number,
                          const PrintMsg_Print_Params& print_params);
 
-
   // Initialize the print preview document.
   bool CreatePreviewDocument();
 
@@ -138,7 +138,8 @@ class PrintWebViewHelper
   void Print(blink::WebLocalFrame* frame,
              const blink::WebNode& node,
              bool silent = false,
-             bool print_background = false);
+             bool print_background = false,
+             const base::string16& device_name = base::string16());
 
   // Notification when printing is done - signal tear-down/free resources.
   void DidFinishPrinting(PrintingResult result);
@@ -147,12 +148,15 @@ class PrintWebViewHelper
 
   // Initialize print page settings with default settings.
   // Used only for native printing workflow.
-  bool InitPrintSettings(bool fit_to_paper_size);
+  bool InitPrintSettings(bool fit_to_paper_size,
+                         const base::string16& device_name = base::string16());
 
   // Calculate number of pages in source document.
-  bool CalculateNumberOfPages(blink::WebLocalFrame* frame,
-                              const blink::WebNode& node,
-                              int* number_of_pages);
+  bool CalculateNumberOfPages(
+      blink::WebLocalFrame* frame,
+      const blink::WebNode& node,
+      int* number_of_pages,
+      const base::string16& device_name = base::string16());
 
   // Update the current print settings with new |passed_job_settings|.
   // |passed_job_settings| dictionary contains print job details such as printer
@@ -160,7 +164,6 @@ class PrintWebViewHelper
   bool UpdatePrintSettings(blink::WebLocalFrame* frame,
                            const blink::WebNode& node,
                            const base::DictionaryValue& passed_job_settings);
-
 
   // Get final print settings from the user.
   // Return false if the user cancels or on error.
@@ -200,7 +203,6 @@ class PrintWebViewHelper
   void RenderPage(const PrintMsg_Print_Params& params,
                   int page_number,
                   blink::WebLocalFrame* frame,
-                  bool is_preview,
                   PdfMetafileSkia* metafile,
                   gfx::Size* page_size,
                   gfx::Rect* content_rect);
@@ -210,7 +212,7 @@ class PrintWebViewHelper
   // |page_number| is zero-based.
   // When method is called, canvas should be setup to draw to |canvas_area|
   // with |scale_factor|.
-  static float RenderPageContent(blink::WebFrame* frame,
+  static float RenderPageContent(blink::WebLocalFrame* frame,
                                  int page_number,
                                  const gfx::Rect& canvas_area,
                                  const gfx::Rect& content_area,
@@ -367,7 +369,6 @@ class PrintWebViewHelper
 
     State state_;
   };
-
 
   bool print_node_in_progress_;
   bool is_loading_;

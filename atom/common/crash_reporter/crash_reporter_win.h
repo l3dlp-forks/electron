@@ -11,10 +11,11 @@
 
 #include "atom/common/crash_reporter/crash_reporter.h"
 #include "base/compiler_specific.h"
-#include "vendor/breakpad/src/client/windows/handler/exception_handler.h"
+#include "breakpad/src/client/windows/handler/exception_handler.h"
 
 namespace base {
-template <typename T> struct DefaultSingletonTraits;
+template <typename T>
+struct DefaultSingletonTraits;
 }
 
 namespace crash_reporter {
@@ -39,7 +40,7 @@ class CrashReporterWin : public CrashReporter {
   friend struct base::DefaultSingletonTraits<CrashReporterWin>;
 
   CrashReporterWin();
-  virtual ~CrashReporterWin();
+  ~CrashReporterWin() override;
 
   static bool FilterCallback(void* context,
                              EXCEPTION_POINTERS* exinfo,
@@ -56,14 +57,17 @@ class CrashReporterWin : public CrashReporter {
   google_breakpad::CustomClientInfo* GetCustomInfo(
       const std::string& product_name,
       const std::string& version,
-      const std::string& company_name);
+      const std::string& company_name,
+      bool upload_to_server);
 
   // Custom information to be passed to crash handler.
   std::vector<google_breakpad::CustomInfoEntry> custom_info_entries_;
   google_breakpad::CustomClientInfo custom_info_;
 
-  bool skip_system_crash_handler_;
-  bool code_range_registered_;
+  bool skip_system_crash_handler_ = false;
+#ifdef _WIN64
+  bool code_range_registered_ = false;
+#endif
   std::unique_ptr<google_breakpad::ExceptionHandler> breakpad_;
 
   DISALLOW_COPY_AND_ASSIGN(CrashReporterWin);

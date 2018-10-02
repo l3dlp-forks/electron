@@ -6,6 +6,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "atom/browser/web_contents_preferences.h"
 #include "brightray/browser/mac/event_dispatching_window.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -20,12 +21,18 @@ void CommonWebContentsDelegate::HandleKeyboardEvent(
     content::WebContents* source,
     const content::NativeWebKeyboardEvent& event) {
   if (event.skip_in_browser ||
-      event.type == content::NativeWebKeyboardEvent::Char)
+      event.GetType() == content::NativeWebKeyboardEvent::kChar)
     return;
 
   // Escape exits tabbed fullscreen mode.
-  if (event.windowsKeyCode == ui::VKEY_ESCAPE && is_html_fullscreen())
+  if (event.windows_key_code == ui::VKEY_ESCAPE && is_html_fullscreen())
     ExitFullscreenModeForTab(source);
+
+  // Check if the webContents has preferences and to ignore shortcuts
+  auto* web_preferences = WebContentsPreferences::From(source);
+  if (web_preferences &&
+      web_preferences->IsEnabled("ignoreMenuShortcuts", false))
+    return;
 
   // Send the event to the menu before sending it to the window
   if (event.os_event.type == NSKeyDown &&

@@ -6,11 +6,15 @@
 #define ATOM_COMMON_API_ATOM_BINDINGS_H_
 
 #include <list>
+#include <memory>
 
+#include "base/files/file_path.h"
 #include "base/macros.h"
+#include "base/process/process_metrics.h"
 #include "base/strings/string16.h"
+#include "native_mate/arguments.h"
+#include "uv.h"  // NOLINT(build/include)
 #include "v8/include/v8.h"
-#include "vendor/node/deps/uv/include/uv.h"
 
 namespace node {
 class Environment;
@@ -20,7 +24,7 @@ namespace atom {
 
 class AtomBindings {
  public:
-  AtomBindings();
+  explicit AtomBindings(uv_loop_t* loop);
   virtual ~AtomBindings();
 
   // Add process.atomBinding function, which behaves like process.binding but
@@ -32,6 +36,16 @@ class AtomBindings {
 
   static void Log(const base::string16& message);
   static void Crash();
+  static void Hang();
+  static v8::Local<v8::Value> GetHeapStatistics(v8::Isolate* isolate);
+  static v8::Local<v8::Value> GetCreationTime(v8::Isolate* isolate);
+  static v8::Local<v8::Value> GetSystemMemoryInfo(v8::Isolate* isolate,
+                                                  mate::Arguments* args);
+  static v8::Local<v8::Value> GetCPUUsage(base::ProcessMetrics* metrics,
+                                          v8::Isolate* isolate);
+  static v8::Local<v8::Value> GetIOCounters(v8::Isolate* isolate);
+  static bool TakeHeapSnapshot(v8::Isolate* isolate,
+                               const base::FilePath& file_path);
 
  private:
   void ActivateUVLoop(v8::Isolate* isolate);
@@ -40,6 +54,7 @@ class AtomBindings {
 
   uv_async_t call_next_tick_async_;
   std::list<node::Environment*> pending_next_ticks_;
+  std::unique_ptr<base::ProcessMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomBindings);
 };

@@ -15,6 +15,10 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
+#if defined(OS_WIN)
+#include "printing/printed_page_win.h"
+#endif
+
 namespace base {
 class RefCountedMemory;
 }
@@ -26,8 +30,9 @@ class MetafilePlayer;
 class PdfToEmfConverter;
 class PrintJobWorker;
 class PrintedDocument;
+#if defined(OS_WIN)
 class PrintedPage;
-class PrintedPagesSource;
+#endif
 class PrinterQuery;
 
 // Manages the print work for a specific document. Talks to the printer through
@@ -45,7 +50,8 @@ class PrintJob : public PrintJobWorkerOwner,
 
   // Grabs the ownership of the PrintJobWorker from another job, which is
   // usually a PrinterQuery. Set the expected page count of the print job.
-  void Initialize(PrintJobWorkerOwner* job, PrintedPagesSource* source,
+  void Initialize(PrintJobWorkerOwner* job,
+                  const base::string16& name,
                   int page_count);
 
   // content::NotificationObserver implementation.
@@ -80,10 +86,6 @@ class PrintJob : public PrintJobWorkerOwner,
   // our data.
   bool FlushJob(base::TimeDelta timeout);
 
-  // Disconnects the PrintedPage source (PrintedPagesSource). It is done when
-  // the source is being destroyed.
-  void DisconnectSource();
-
   // Returns true if the print job is pending, i.e. between a StartPrinting()
   // and the end of the spooling.
   bool is_job_pending() const;
@@ -100,6 +102,12 @@ class PrintJob : public PrintJobWorkerOwner,
       const gfx::Size& page_size,
       const gfx::Rect& content_area,
       bool print_text_with_gdi);
+
+  void StartPdfToPostScriptConversion(
+      const scoped_refptr<base::RefCountedMemory>& bytes,
+      const gfx::Rect& content_area,
+      const gfx::Point& physical_offset,
+      bool ps_level2);
 #endif  // defined(OS_WIN)
 
  protected:
@@ -126,17 +134,13 @@ class PrintJob : public PrintJobWorkerOwner,
   void HoldUntilStopIsCalled();
 
 #if defined(OS_WIN)
-  void OnPdfToEmfStarted(int page_count);
-  void OnPdfToEmfPageConverted(int page_number,
-                               float scale_factor,
-                               std::unique_ptr<MetafilePlayer> emf);
+  void OnPdfConversionStarted(int page_count);
+  void OnPdfPageConverted(int page_number,
+                          float scale_factor,
+                          std::unique_ptr<MetafilePlayer> emf);
 #endif  // defined(OS_WIN)
 
   content::NotificationRegistrar registrar_;
-
-  // Source that generates the PrintedPage's (i.e. a WebContents). It will be
-  // set back to NULL if the source is deleted before this object.
-  PrintedPagesSource* source_;
 
   // All the UI is done in a worker thread because many Win32 print functions
   // are blocking and enters a message loop without your consent. There is one
@@ -157,8 +161,8 @@ class PrintJob : public PrintJobWorkerOwner,
   bool is_canceling_;
 
 #if defined(OS_WIN)
-  class PdfToEmfState;
-  std::unique_ptr<PdfToEmfState> pdf_to_emf_state_;
+  class PdfConversionState;
+  std::unique_ptr<PdfConversionState> pdf_conversion_state_;
   std::vector<int> pdf_page_mapping_;
 #endif  // defined(OS_WIN)
 
@@ -206,14 +210,21 @@ class JobEventDetails : public base::RefCountedThreadSafe<JobEventDetails> {
     FAILED,
   };
 
-  JobEventDetails(Type type, PrintedDocument* document, PrintedPage* page);
+#if defined(OS_WIN)
+  JobEventDetails(Type type,
+                  int job_id,
+                  PrintedDocument* document,
+                  PrintedPage* page);
+#endif
+  JobEventDetails(Type type, int job_id, PrintedDocument* document);
 
   // Getters.
   PrintedDocument* document() const;
+#if defined(OS_WIN)
   PrintedPage* page() const;
-  Type type() const {
-    return type_;
-  }
+#endif
+  Type type() const { return type_; }
+  int job_id() const { return job_id_; }
 
  private:
   friend class base::RefCountedThreadSafe<JobEventDetails>;
@@ -221,8 +232,11 @@ class JobEventDetails : public base::RefCountedThreadSafe<JobEventDetails> {
   ~JobEventDetails();
 
   scoped_refptr<PrintedDocument> document_;
+#if defined(OS_WIN)
   scoped_refptr<PrintedPage> page_;
+#endif
   const Type type_;
+  int job_id_;
 
   DISALLOW_COPY_AND_ASSIGN(JobEventDetails);
 };

@@ -15,21 +15,22 @@ PrintMsg_Print_Params::PrintMsg_Print_Params()
       margin_left(0),
       dpi(0),
       scale_factor(1.0f),
-      desired_dpi(0),
       document_cookie(0),
       selection_only(false),
       supports_alpha_blend(false),
       preview_ui_id(-1),
       preview_request_id(0),
       is_first_request(false),
-      print_scaling_option(blink::WebPrintScalingOptionSourceSize),
+      print_scaling_option(blink::kWebPrintScalingOptionSourceSize),
       print_to_pdf(false),
       display_header_footer(false),
       title(),
       url(),
       should_print_backgrounds(false) {}
 
-PrintMsg_Print_Params::~PrintMsg_Print_Params() {}
+PrintMsg_Print_Params::PrintMsg_Print_Params(const PrintMsg_Print_Params&) =
+    default;
+PrintMsg_Print_Params::~PrintMsg_Print_Params() = default;
 
 void PrintMsg_Print_Params::Reset() {
   page_size = gfx::Size();
@@ -39,14 +40,13 @@ void PrintMsg_Print_Params::Reset() {
   margin_left = 0;
   dpi = 0;
   scale_factor = 1.0f;
-  desired_dpi = 0;
   document_cookie = 0;
   selection_only = false;
   supports_alpha_blend = false;
   preview_ui_id = -1;
   preview_request_id = 0;
   is_first_request = false;
-  print_scaling_option = blink::WebPrintScalingOptionSourceSize;
+  print_scaling_option = blink::kWebPrintScalingOptionSourceSize;
   print_to_pdf = false;
   display_header_footer = false;
   title = base::string16();
@@ -54,11 +54,11 @@ void PrintMsg_Print_Params::Reset() {
   should_print_backgrounds = false;
 }
 
-PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params()
-  : pages() {
-}
+PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params() : pages() {}
+PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params(
+    const PrintMsg_PrintPages_Params&) = default;
 
-PrintMsg_PrintPages_Params::~PrintMsg_PrintPages_Params() {}
+PrintMsg_PrintPages_Params::~PrintMsg_PrintPages_Params() = default;
 
 void PrintMsg_PrintPages_Params::Reset() {
   params.Reset();

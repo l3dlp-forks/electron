@@ -4,25 +4,31 @@
 
 #include "atom/browser/browser.h"
 
+#include <memory>
 #include <string>
 
 #include "atom/browser/atom_browser_main_parts.h"
 #include "atom/browser/browser_observer.h"
+#include "atom/browser/login_handler.h"
 #include "atom/browser/native_window.h"
 #include "atom/browser/window_list.h"
 #include "base/files/file_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "brightray/browser/brightray_paths.h"
+#include "brightray/common/application_info.h"
 
 namespace atom {
 
-Browser::Browser()
-    : is_quiting_(false),
-      is_exiting_(false),
-      is_ready_(false),
-      is_shutdown_(false) {
+Browser::LoginItemSettings::LoginItemSettings() = default;
+Browser::LoginItemSettings::~LoginItemSettings() = default;
+Browser::LoginItemSettings::LoginItemSettings(const LoginItemSettings& other) =
+    default;
+
+Browser::Browser() {
   WindowList::AddObserver(this);
 }
 
@@ -43,11 +49,10 @@ void Browser::Quit() {
   if (!is_quiting_)
     return;
 
-  atom::WindowList* window_list = atom::WindowList::GetInstance();
-  if (window_list->size() == 0)
+  if (atom::WindowList::IsEmpty())
     NotifyAndShutdown();
-
-  window_list->CloseAllWindows();
+  else
+    atom::WindowList::CloseAllWindows();
 }
 
 void Browser::Exit(mate::Arguments* args) {
@@ -65,14 +70,12 @@ void Browser::Exit(mate::Arguments* args) {
     is_exiting_ = true;
 
     // Must destroy windows before quitting, otherwise bad things can happen.
-    atom::WindowList* window_list = atom::WindowList::GetInstance();
-    if (window_list->size() == 0) {
+    if (atom::WindowList::IsEmpty()) {
       Shutdown();
     } else {
       // Unlike Quit(), we do not ask to close window, but destroy the window
       // without asking.
-      for (NativeWindow* window : *window_list)
-        window->CloseContents(nullptr);  // e.g. Destroy()
+      atom::WindowList::DestroyAllWindows();
     }
   }
 }
@@ -97,31 +100,25 @@ void Browser::Shutdown() {
 }
 
 std::string Browser::GetVersion() const {
-  if (version_override_.empty()) {
-    std::string version = GetExecutableFileVersion();
-    if (!version.empty())
-      return version;
-  }
-
-  return version_override_;
+  std::string ret = brightray::GetOverriddenApplicationVersion();
+  if (ret.empty())
+    ret = GetExecutableFileVersion();
+  return ret;
 }
 
 void Browser::SetVersion(const std::string& version) {
-  version_override_ = version;
+  brightray::OverrideApplicationVersion(version);
 }
 
 std::string Browser::GetName() const {
-  if (name_override_.empty()) {
-    std::string name = GetExecutableFileProductName();
-    if (!name.empty())
-      return name;
-  }
-
-  return name_override_;
+  std::string ret = brightray::GetOverriddenApplicationName();
+  if (ret.empty())
+    ret = GetExecutableFileProductName();
+  return ret;
 }
 
 void Browser::SetName(const std::string& name) {
-  name_override_ = name;
+  brightray::OverrideApplicationName(name);
 }
 
 int Browser::GetBadgeCount() {
@@ -153,13 +150,27 @@ void Browser::WillFinishLaunching() {
 
 void Browser::DidFinishLaunching(const base::DictionaryValue& launch_info) {
   // Make sure the userData directory is created.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
   base::FilePath user_data;
   if (PathService::Get(brightray::DIR_USER_DATA, &user_data))
     base::CreateDirectoryAndGetError(user_data, nullptr);
 
   is_ready_ = true;
+  if (ready_promise_) {
+    ready_promise_->Resolve();
+  }
   for (BrowserObserver& observer : observers_)
     observer.OnFinishLaunching(launch_info);
+}
+
+util::Promise* Browser::WhenReady(v8::Isolate* isolate) {
+  if (!ready_promise_) {
+    ready_promise_ = new util::Promise(isolate);
+    if (is_ready()) {
+      ready_promise_->Resolve();
+    }
+  }
+  return ready_promise_;
 }
 
 void Browser::OnAccessibilitySupportChanged() {
@@ -168,10 +179,16 @@ void Browser::OnAccessibilitySupportChanged() {
 }
 
 void Browser::RequestLogin(
-    LoginHandler* login_handler,
+    scoped_refptr<LoginHandler> login_handler,
     std::unique_ptr<base::DictionaryValue> request_details) {
   for (BrowserObserver& observer : observers_)
     observer.OnLogin(login_handler, *(request_details.get()));
+}
+
+void Browser::PreMainMessageLoopRun() {
+  for (BrowserObserver& observer : observers_) {
+    observer.OnPreMainMessageLoopRun();
+  }
 }
 
 void Browser::NotifyAndShutdown() {
@@ -215,5 +232,12 @@ void Browser::OnWindowAllClosed() {
       observer.OnWindowAllClosed();
   }
 }
+
+#if defined(OS_MACOSX)
+void Browser::NewWindowForTab() {
+  for (BrowserObserver& observer : observers_)
+    observer.OnNewWindowForTab();
+}
+#endif
 
 }  // namespace atom

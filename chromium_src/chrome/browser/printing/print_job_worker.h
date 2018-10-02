@@ -7,10 +7,12 @@
 
 #include <memory>
 
+#include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "content/public/browser/browser_thread.h"
 #include "printing/page_number.h"
@@ -51,7 +53,8 @@ class PrintJobWorker {
                    bool has_selection,
                    MarginType margin_type,
                    bool is_scripted,
-                   bool is_modifiable);
+                   bool is_modifiable,
+                   const base::string16& device_name);
 
   // Set the new print settings.
   void SetSettings(std::unique_ptr<base::DictionaryValue> new_settings);
@@ -75,8 +78,7 @@ class PrintJobWorker {
   bool IsRunning() const;
 
   // Posts the given task to be run.
-  bool PostTask(const tracked_objects::Location& from_here,
-                const base::Closure& task);
+  bool PostTask(const base::Location& from_here, const base::Closure& task);
 
   // Signals the thread to exit in the near future.
   void StopSoon();
@@ -99,8 +101,17 @@ class PrintJobWorker {
   // and DEFAULT_INIT_DONE. These three are sent through PrintJob::InitDone().
   class NotificationTask;
 
+  // Posts a task to call OnNewPage(). Used to wait for pages/document to be
+  // available.
+  void PostWaitForPage();
+
+#if defined(OS_WIN)
   // Renders a page in the printer.
   void SpoolPage(PrintedPage* page);
+#else
+  // Renders the document to the printer.
+  void SpoolJob();
+#endif
 
   // Closes the job since spooling is done.
   void OnDocumentDone();
@@ -112,10 +123,9 @@ class PrintJobWorker {
   // Asks the user for print settings. Must be called on the UI thread.
   // Required on Mac and Linux. Windows can display UI from non-main threads,
   // but sticks with this for consistency.
-  void GetSettingsWithUI(
-      int document_page_count,
-      bool has_selection,
-      bool is_scripted);
+  void GetSettingsWithUI(int document_page_count,
+                         bool has_selection,
+                         bool is_scripted);
 
   // Called on the UI thread to update the print settings.
   void UpdatePrintSettings(std::unique_ptr<base::DictionaryValue> new_settings);
@@ -127,6 +137,9 @@ class PrintJobWorker {
   // displaying a dialog. So this needs to happen from the UI thread on these
   // systems.
   void UseDefaultSettings();
+
+  // set the printer name
+  void InitWithDeviceName(const base::string16& device_name);
 
   // Printing context delegate.
   std::unique_ptr<PrintingContext::Delegate> printing_context_delegate_;
